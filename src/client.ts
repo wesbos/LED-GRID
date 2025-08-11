@@ -1,17 +1,100 @@
 import "./styles.css";
 import throttle from "lodash/throttle";
-
 import PartySocket from "partysocket";
-import {
-  GO_AWAY_SENTINEL,
-  SLOW_DOWN_SENTINEL,
-  createReactionMessage,
-  parseUpdateMessage,
-} from "./types";
+import { GRID_SIZE, TOTAL_CELLS } from "./constants";
 
-declare const PARTYKIT_HOST: string;
+const PARTYKIT_HOST: string = `${window.location.origin}/party`;
 
-// let's create a new room for each page
+console.log("PARTYKIT_HOST", PARTYKIT_HOST);
+
+// Set grid size CSS variable
+document.documentElement.style.setProperty('--grid-size', GRID_SIZE.toString());
+
+// Function to sample image and draw to grid
+const drawImageToGrid = async (file: File) => {
+  const img = new Image();
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+
+  img.onload = () => {
+    // Clear any existing sound state
+    if (soundTimeout) {
+      clearTimeout(soundTimeout);
+    }
+    isSoundExpired = false;
+    audioQueue.length = 0;
+
+    // Set canvas size to match our grid
+    canvas.width = GRID_SIZE;
+    canvas.height = GRID_SIZE;
+
+    // Draw and scale image to fit our grid size
+    ctx.drawImage(img, 0, 0, GRID_SIZE, GRID_SIZE);
+
+    const pixelsWithColors: { index: number, color: string }[] = [];
+    // Sample each pixel and collect coordinates with colors
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        const pixel = ctx.getImageData(x, y, 1, 1).data;
+        const color = `rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`;
+        const index = y * GRID_SIZE + x;
+        pixelsWithColors.push({ index, color });
+      }
+    }
+    
+    // Draw all pixels
+    pixelsWithColors.forEach(({ index, color }) => {
+      socket.send(JSON.stringify({
+        type: 'draw',
+        x: index % GRID_SIZE,
+        y: Math.floor(index / GRID_SIZE),
+        color
+      }));
+    });
+
+    // Queue matrix sounds after all pixels are drawn
+    for(let i = 0; i < 5; i++) {
+      queueMatrixSound();
+    }
+    startSoundTimer();
+  };
+
+  img.src = URL.createObjectURL(file);
+};
+
+// Add drag and drop handlers
+document.addEventListener('dragenter', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  document.body.classList.add('drag-active');
+});
+
+document.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  // Only remove class if we're leaving the document
+  if (!e.relatedTarget) {
+    document.body.classList.remove('drag-active');
+  }
+});
+
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+});
+
+document.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  document.body.classList.remove('drag-active');
+
+  const file = e.dataTransfer?.files[0];
+  if (file?.type.startsWith('image/')) {
+    drawImageToGrid(file);
+  }
+});
+
+// Get room ID from the URL path
 const getRoomId = () => {
   let room = window.location.pathname;
   if (room.startsWith("/")) room = room.slice(1);
@@ -19,55 +102,317 @@ const getRoomId = () => {
   return room.replaceAll("/", "-") || "default";
 };
 
-// A PartySocket is like a WebSocket, except it's a bit more magical.
-// It handles reconnection logic, buffering messages while it's offline, and more.
+// Initialize PartySocket connection
 const room = getRoomId();
 console.log("room", room);
+console.log(`PARTYKIT_HOST: ${PARTYKIT_HOST}`);
 const socket = new PartySocket({
   host: PARTYKIT_HOST,
   room,
 });
 
-const buttons = [...document.querySelectorAll(".reaction")].map((button) => {
-  const kind = button.getAttribute("data-kind")!;
-  button.addEventListener("click", async () => {
-    socket.send(createReactionMessage(kind));
-  });
+// Create the grid
+const grid = document.querySelector('.grid')!;
+const colorPicker = document.querySelector('#colorPicker') as HTMLInputElement;
+const presetButtons = document.querySelectorAll('.preset-btn');
+const gridState: { color: string | undefined }[] = Array(TOTAL_CELLS).fill(null).map(() => ({ color: undefined }));
 
-  return {
-    kind,
-    count: parseInt(button.getAttribute("data-count") ?? "0", 10),
-    element: button,
-  };
+let isDrawing = false;
+let currentColor: string | undefined = colorPicker.value;
+
+// Create grid cells
+const createGrid = () => {
+  grid.innerHTML = ''; // Clear existing cells
+  for (let i = 0; i < TOTAL_CELLS; i++) {
+    const cell = document.createElement('button');
+    cell.className = 'cell';
+    cell.dataset.index = i.toString();
+    cell.setAttribute('role', 'gridcell');
+    cell.setAttribute('aria-label', `Cell ${i}`);
+    grid.appendChild(cell);
+  }
+};
+
+// Initialize the grid
+createGrid();
+
+// Update grid size CSS variable
+document.documentElement.style.setProperty('--grid-size', GRID_SIZE.toString());
+
+// Color handling
+// Update active state of preset buttons
+const updateActivePreset = (color: string | undefined) => {
+  presetButtons.forEach(btn => {
+    const btnElement = btn as HTMLElement;
+    if (btnElement.dataset.color === color) {
+      btnElement.classList.add('active');
+    } else {
+      btnElement.classList.remove('active');
+    }
+  });
+};
+
+// Handle color picker changes
+colorPicker.addEventListener('input', (e) => {
+  currentColor = (e.target as HTMLInputElement).value;
+  updateActivePreset(currentColor);
 });
 
-let reactions: Record<string, number> = {};
+// Handle preset button clicks
+presetButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const btnElement = btn as HTMLElement;
+    if (btnElement.classList.contains('eraser')) {
+      // clearGrid();
+    } else {
+      currentColor = btnElement.dataset.color!;
+      colorPicker.value = currentColor;
+    }
+    updateActivePreset(currentColor);
+  });
+});
 
-const updateUI = throttle((event: WebSocketEventMap["message"]) => {
-  const message = parseUpdateMessage(event.data);
-  reactions = { ...reactions, ...message.reactions };
-  for (const button of buttons) {
-    if (reactions[button.kind]) {
-      button.element.setAttribute(
-        "data-count",
-        reactions[button.kind].toString()
-      );
+// Audio setup for matrix sound effects
+let audioContext: AudioContext | null = null;
+
+// Audio queue system
+const audioQueue: (() => void)[] = [];
+let isProcessingQueue = false;
+let soundTimeout: NodeJS.Timeout | null = null;
+
+const processAudioQueue = async () => {
+  if (isProcessingQueue || audioQueue.length === 0) return;
+  
+  isProcessingQueue = true;
+  while (audioQueue.length > 0 && !isSoundExpired) {
+    const playSound = audioQueue.shift();
+    if (playSound) {
+      playSound();
+      // Wait 50ms between sounds
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
-}, 50);
+  isProcessingQueue = false;
+};
 
+let isSoundExpired = false;
+
+const startSoundTimer = () => {
+  isSoundExpired = false;
+  if (soundTimeout) {
+    clearTimeout(soundTimeout);
+  }
+  soundTimeout = setTimeout(() => {
+    isSoundExpired = true;
+    audioQueue.length = 0; // Clear remaining sounds
+  }, 1000);
+};
+
+const queueMatrixSound = () => {
+  // Create a new sound function and add it to the queue
+  audioQueue.push(() => {
+    if (!audioContext) {
+      audioContext = new AudioContext();
+    }
+
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    const frequency = 2000 + Math.random() * 2000;
+    
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+    
+    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.1);
+  });
+
+  processAudioQueue();
+};
+
+// Drawing functions
+const drawCell = (index: number, color: string | undefined) => {
+  socket.send(JSON.stringify({
+    type: 'draw',
+    x: index % GRID_SIZE,
+    y: Math.floor(index / GRID_SIZE),
+    color
+  }));
+  queueMatrixSound();
+  startSoundTimer(); // Start/reset the sound timer after each draw
+};
+
+const clearGrid = () => {
+  socket.send(JSON.stringify({
+    type: 'clear'
+  }));
+};
+
+const drawBatchOfCells = (pixels: number[], color: string) => {
+  pixels.forEach(index => {
+    socket.send(JSON.stringify({
+      type: 'draw',
+      x: index % GRID_SIZE,
+      y: Math.floor(index / GRID_SIZE),
+      color
+    }));
+  });
+  // Queue a few matrix sounds after the batch is complete
+  for(let i = 0; i < 5; i++) {
+    queueMatrixSound();
+  }
+  startSoundTimer();
+};
+
+// Handle drawing with pointer events
+const handleDrawEvent = (e: PointerEvent) => {
+  if (!isDrawing) return;
+
+  const cell = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement;
+  if (!cell?.classList.contains('cell')) return;
+
+  const index = parseInt(cell.dataset.index!);
+  if (isNaN(index)) return;
+
+  drawCell(index, currentColor);
+};
+
+// Pointer event handlers
+grid.addEventListener('pointerdown', ((e: Event) => {
+  const pointerEvent = e as PointerEvent;
+  isDrawing = true;
+  // Capture the pointer to get events outside the element
+  const target = pointerEvent.target as HTMLElement;
+  target.setPointerCapture(pointerEvent.pointerId);
+  handleDrawEvent(pointerEvent);
+}) as EventListener);
+
+grid.addEventListener('pointermove', ((e: Event) => {
+  handleDrawEvent(e as PointerEvent);
+}) as EventListener);
+
+const stopDrawing = () => {
+  isDrawing = false;
+};
+
+grid.addEventListener('pointerup', stopDrawing);
+grid.addEventListener('pointerleave', stopDrawing);
+grid.addEventListener('pointercancel', stopDrawing);
+
+// Remove touch-action to prevent scrolling while drawing
+(grid as HTMLElement).style.touchAction = 'none';
+
+// Font data - Simple 5x7 pixel font representation
+const FONT_DATA = {
+  A: [
+    [0,1,1,0,0],
+    [1,0,0,1,0],
+    [1,1,1,1,0],
+    [1,0,0,1,0],
+    [1,0,0,1,0],
+  ],
+  // Add more letters as needed
+};
+
+// Function to draw text
+const drawText = async (text: string, color: string) => {
+  // Clear any existing timeouts and expired state
+  if (soundTimeout) {
+    clearTimeout(soundTimeout);
+  }
+  isSoundExpired = false;
+  audioQueue.length = 0;
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  canvas.width = GRID_SIZE;
+  canvas.height = GRID_SIZE;
+  
+  // Adjust font size based on text length
+  const fontSize = Math.min(48, Math.floor(GRID_SIZE / text.length) * 1.5);
+  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.fillStyle = 'white';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  
+  // Center text
+  ctx.fillText(text, GRID_SIZE/2, GRID_SIZE/2);
+  
+  const pixels: number[] = [];
+  
+  // Collect all pixels that need to be drawn
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      if (pixel[3] > 0) {
+        const index = y * GRID_SIZE + x;
+        pixels.push(index);
+      }
+    }
+  }
+  
+  // Draw all pixels as one batch
+  drawBatchOfCells(pixels, color);
+};
+
+// Handle text form submission
+const textForm = document.getElementById('textForm') as HTMLFormElement;
+const textInput = document.getElementById('textInput') as HTMLInputElement;
+
+textForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = textInput.value.trim();
+  if (text) {
+    drawText(text, currentColor || '#ffffff');
+    textInput.value = '';
+  }
+});
+
+// Handle incoming messages
 socket.addEventListener("message", (event) => {
-  if (event.data === SLOW_DOWN_SENTINEL) {
-    console.log("Cool down. You're sending too many messages.");
-    return;
-  }
-  if (event.data === GO_AWAY_SENTINEL) {
-    // server told us to go away. They already closed the connection, but
-    // we'll call socket.close() to stop reconnection attempts
-    console.log("Good bye.");
-    socket.close();
-    return;
+  // Handle special string messages first
+  if (typeof event.data === 'string') {
+    if (event.data === 'slowdown') {
+      console.log('Drawing too fast, please slow down');
+      return;
+    }
+    if (event.data === 'goaway') {
+      console.log('Connection closed by server');
+      socket.close();
+      return;
+    }
   }
 
-  updateUI(event);
+  try {
+    const data = JSON.parse(event.data);
+    if (data.type === 'gridUpdate') {
+      // Update single cell
+      const cell = grid.children[data.index] as HTMLElement;
+      const color = data.color ?? null;
+      cell.style.setProperty('--color', color);
+      gridState[data.index] = { color: color ?? undefined };
+    } else if (data.type === 'fullState') {
+      // Update entire grid
+      data.state.forEach((cellData: { color: string | undefined } | null, index: number) => {
+        const element = grid.children[index] as HTMLElement;
+        const color = cellData?.color ?? null;
+        element.style.setProperty('--color', color);
+        gridState[index] = { color: color ?? undefined };
+      });
+    } else if (data.type === 'userCount') {
+      // Update user count display
+      const userCountElement = document.getElementById('userCount');
+      if (userCountElement) {
+        userCountElement.textContent = data.count.toString();
+      }
+    }
+  } catch (err) {
+    console.error('Failed to parse message:', err);
+  }
 });

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, shrink-to-fit=no"
+    />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>PartyKit: Everything's better with friends!</title>
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <!-- Primary Meta Tags -->
+    <meta name="title" content="PartyKit" />
+    <meta name="description" content="Everything's better with friends!" />
+    <meta name="author" content="PartyKit" />
+    <!-- Theme Colour -->
+    <meta name="theme-color" content="#ffffff" />
+
+    <link rel="stylesheet" href="/normalize.css" />
+    <link rel="stylesheet" href="/dist/client.css" />
+    <style>
+      :root {
+        --grid-size: 16;
+      }
+
+      .controls {
+        margin: 20px auto;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
+        flex-wrap: wrap;
+        max-width: 600px;
+      }
+
+      .user-count {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.1);
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .user-count-icon {
+        font-size: 18px;
+      }
+
+      .color-picker {
+        margin: 0 10px;
+      }
+
+      .color-presets {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .preset-btn {
+        width: 30px;
+        height: 30px;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        cursor: pointer;
+        padding: 0;
+        transition: transform 0.1s ease;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .preset-btn:hover {
+        transform: scale(1.1);
+      }
+
+      .preset-btn.active {
+        border-color: #000;
+      }
+
+      .preset-btn.eraser {
+        background: #f5f5f5;
+        position: relative;
+      }
+
+      .preset-btn.eraser::before,
+      .preset-btn.eraser::after {
+        content: "";
+        position: absolute;
+        width: 16px;
+        height: 2px;
+        background: #666;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%) rotate(45deg);
+      }
+
+      .preset-btn.eraser::after {
+        transform: translate(-50%, -50%) rotate(-45deg);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(var(--grid-size), minmax(1px, 1fr));
+        grid-template-rows: repeat(var(--grid-size), minmax(1px, 1fr));
+        background: #efefef;
+        padding: 1px;
+        margin: 0 auto;
+        user-select: none;
+      }
+
+      .cell {
+        /* width: 30px;
+        height: 30px; */
+        aspect-ratio: 1 / 1;
+        background: var(--color, transparent);
+        cursor: pointer;
+        --border-color: hsl(from var(--color) h s calc(l - 10));
+        border: 0.5px solid var(--border-color);
+        padding: 0;
+      }
+
+      .cell.active {
+        background: #fff;
+      }
+
+      /* Drag and drop styles */
+      body.drag-active::after {
+        content: "Drop image to draw";
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        pointer-events: none;
+        z-index: 1000;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="user-count">
+        <span class="user-count-icon">👥</span>
+        <span id="userCount">1</span> collaborators
+      </div>
+
+      <main>
+        <h1>LED Grid Studio</h1>
+        <div class="controls">
+          <form id="textForm" class="text-input-form">
+            <input 
+              type="text" 
+              id="textInput" 
+              placeholder="Type something..." 
+              maxlength="10"
+              aria-label="Text to draw"
+            >
+            <button type="submit">Draw</button>
+          </form>
+
+          <div class="color-controls">
+            <div class="color-input">
+              <label for="colorPicker" class="sr-only">Custom color</label>
+              <input
+                type="color"
+                id="colorPicker"
+                class="color-picker"
+                value="#ffffff"
+                aria-label="Choose custom color"
+              />
+            </div>
+            
+            <div class="color-presets" role="toolbar" aria-label="Color presets">
+              <button
+                class="preset-btn"
+                style="background: #FF0080"
+                data-color="#FF0080"
+                title="Hot Pink"
+              ></button>
+              <button
+                class="preset-btn"
+                style="background: #0070F3"
+                data-color="#0070F3"
+                title="Blue"
+              ></button>
+              <button
+                class="preset-btn"
+                style="background: #50E3C2"
+                data-color="#50E3C2"
+                title="Cyan"
+              ></button>
+              <button
+                class="preset-btn"
+                style="background: #7928CA"
+                data-color="#7928CA"
+                title="Purple"
+              ></button>
+              <button
+                class="preset-btn"
+                style="background: #F5A623"
+                data-color="#F5A623"
+                title="Orange"
+              ></button>
+              <button
+                class="preset-btn"
+                style="background: #79FFE1"
+                data-color="#79FFE1"
+                title="Mint"
+              ></button>
+              <button
+                class="preset-btn"
+                style="background: #ffffff"
+                data-color="#FFFFFF"
+                title="White"
+              ></button>
+              <button class="preset-btn eraser" title="Eraser (Clear)"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid" role="grid" aria-label="LED Drawing Grid">
+          <!-- Grid cells will be added via JavaScript -->
+        </div>
+
+        <footer>
+          <p class="hint">Drag an image to draw • Type text to display</p>
+        </footer>
+      </main>
+    </div>
+    <script type="module" src="../src/client.ts"></script>
+  </body>
+</html>
