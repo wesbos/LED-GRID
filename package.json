@@ -3,20 +3,20 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "backend": "partykit dev --port 5555",
+    "backend": "wrangler dev",
     "frontend": "vite",
     "dev": "npm-run-all --parallel backend frontend",
     "deploy": "partykit deploy"
   },
   "dependencies": {
     "lodash": "^4.17.21",
-    "partysocket": "1.0.3",
-    "zod": "^3.24.1"
+    "partyserver": "^0.0.72",
+    "partysocket": "1.1.5",
+    "zod": "^4.0.17"
   },
   "devDependencies": {
-    "@types/lodash": "^4.17.15",
+    "@types/lodash": "^4.17.20",
     "npm-run-all": "^4.1.5",
-    "partykit": "^0.0.111",
-    "typescript": "^5.7.3"
+    "typescript": "^5.9.2"
   }
 }

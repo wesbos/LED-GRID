@@ -1,0 +1,22 @@
+{
+  "name": "wled-grid",
+  "main": "src/server.ts",
+  "compatibility_date": "2025-05-08",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GridServer",
+        "class_name": "GridServer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["GridServer"]
+    }
+  ],
+  "dev": {
+    "port": 5555
+  }
+}

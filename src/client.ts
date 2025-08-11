@@ -3,7 +3,8 @@ import throttle from "lodash/throttle";
 import PartySocket from "partysocket";
 import { GRID_SIZE, TOTAL_CELLS } from "./constants";
 
-const PARTYKIT_HOST: string = `${window.location.origin}/party`;
+// const PARTYKIT_HOST: string = `${window.location.origin}/party`;
+const PARTYKIT_HOST: string = `http://localhost:5555`;
 
 console.log("PARTYKIT_HOST", PARTYKIT_HOST);
 
@@ -17,13 +18,6 @@ const drawImageToGrid = async (file: File) => {
   const ctx = canvas.getContext('2d')!;
 
   img.onload = () => {
-    // Clear any existing sound state
-    if (soundTimeout) {
-      clearTimeout(soundTimeout);
-    }
-    isSoundExpired = false;
-    audioQueue.length = 0;
-
     // Set canvas size to match our grid
     canvas.width = GRID_SIZE;
     canvas.height = GRID_SIZE;
@@ -41,7 +35,7 @@ const drawImageToGrid = async (file: File) => {
         pixelsWithColors.push({ index, color });
       }
     }
-    
+
     // Draw all pixels
     pixelsWithColors.forEach(({ index, color }) => {
       socket.send(JSON.stringify({
@@ -52,11 +46,6 @@ const drawImageToGrid = async (file: File) => {
       }));
     });
 
-    // Queue matrix sounds after all pixels are drawn
-    for(let i = 0; i < 5; i++) {
-      queueMatrixSound();
-    }
-    startSoundTimer();
   };
 
   img.src = URL.createObjectURL(file);
@@ -108,6 +97,7 @@ console.log("room", room);
 console.log(`PARTYKIT_HOST: ${PARTYKIT_HOST}`);
 const socket = new PartySocket({
   host: PARTYKIT_HOST,
+  party: 'grid-server',
   room,
 });
 
@@ -172,69 +162,7 @@ presetButtons.forEach(btn => {
   });
 });
 
-// Audio setup for matrix sound effects
-let audioContext: AudioContext | null = null;
-
-// Audio queue system
-const audioQueue: (() => void)[] = [];
-let isProcessingQueue = false;
-let soundTimeout: NodeJS.Timeout | null = null;
-
-const processAudioQueue = async () => {
-  if (isProcessingQueue || audioQueue.length === 0) return;
-  
-  isProcessingQueue = true;
-  while (audioQueue.length > 0 && !isSoundExpired) {
-    const playSound = audioQueue.shift();
-    if (playSound) {
-      playSound();
-      // Wait 50ms between sounds
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-  }
-  isProcessingQueue = false;
-};
-
-let isSoundExpired = false;
-
-const startSoundTimer = () => {
-  isSoundExpired = false;
-  if (soundTimeout) {
-    clearTimeout(soundTimeout);
-  }
-  soundTimeout = setTimeout(() => {
-    isSoundExpired = true;
-    audioQueue.length = 0; // Clear remaining sounds
-  }, 1000);
-};
-
-const queueMatrixSound = () => {
-  // Create a new sound function and add it to the queue
-  audioQueue.push(() => {
-    if (!audioContext) {
-      audioContext = new AudioContext();
-    }
-
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-
-    const frequency = 2000 + Math.random() * 2000;
-    
-    oscillator.type = 'square';
-    oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-    
-    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.1);
-  });
-
-  processAudioQueue();
-};
+// Audio removed
 
 // Drawing functions
 const drawCell = (index: number, color: string | undefined) => {
@@ -244,8 +172,6 @@ const drawCell = (index: number, color: string | undefined) => {
     y: Math.floor(index / GRID_SIZE),
     color
   }));
-  queueMatrixSound();
-  startSoundTimer(); // Start/reset the sound timer after each draw
 };
 
 const clearGrid = () => {
@@ -263,11 +189,6 @@ const drawBatchOfCells = (pixels: number[], color: string) => {
       color
     }));
   });
-  // Queue a few matrix sounds after the batch is complete
-  for(let i = 0; i < 5; i++) {
-    queueMatrixSound();
-  }
-  startSoundTimer();
 };
 
 // Handle drawing with pointer events
@@ -323,29 +244,24 @@ const FONT_DATA = {
 // Function to draw text
 const drawText = async (text: string, color: string) => {
   // Clear any existing timeouts and expired state
-  if (soundTimeout) {
-    clearTimeout(soundTimeout);
-  }
-  isSoundExpired = false;
-  audioQueue.length = 0;
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;
   canvas.width = GRID_SIZE;
   canvas.height = GRID_SIZE;
-  
+
   // Adjust font size based on text length
   const fontSize = Math.min(48, Math.floor(GRID_SIZE / text.length) * 1.5);
   ctx.font = `bold ${fontSize}px Arial`;
   ctx.fillStyle = 'white';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
-  
+
   // Center text
   ctx.fillText(text, GRID_SIZE/2, GRID_SIZE/2);
-  
+
   const pixels: number[] = [];
-  
+
   // Collect all pixels that need to be drawn
   for (let y = 0; y < GRID_SIZE; y++) {
     for (let x = 0; x < GRID_SIZE; x++) {
@@ -356,7 +272,7 @@ const drawText = async (text: string, color: string) => {
       }
     }
   }
-  
+
   // Draw all pixels as one batch
   drawBatchOfCells(pixels, color);
 };

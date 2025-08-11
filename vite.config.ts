@@ -7,7 +7,7 @@ export default defineConfig({
     allowedHosts: ['local.wesbos.com'],
     proxy: {
       '/party': {
-        target: 'http://127.0.0.1:5555',
+        target: 'http://localhost:5555',
         ws: true, // important for WebSocket connections
         changeOrigin: true
       }
