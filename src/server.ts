@@ -172,17 +172,18 @@ export class GridServer extends Server {
 
   private updateLED(intervalMs: number) {
 
-
     if (!this.wled) {
       console.log('No WLED client');
       setTimeout(this.updateLED.bind(this), 1000)
       return;
     };
+
     if (this.dirtyIndices.size === 0) {
       console.log('No dirty indices', Date.now());
       setTimeout(this.updateLED.bind(this), 1000)
       return;
     };
+
     const updates: { index: number; color: string }[] = [];
     let count = 0;
     // Drain up to MAX_UPDATES_PER_TICK dirty indices
@@ -192,20 +193,22 @@ export class GridServer extends Server {
       const hex = toHex(color);
       updates.push({ index: idx, color: hex });
       count++;
-      // if (count >= this.MAX_UPDATES_PER_TICK) {
-      //   break;
-      // };
     }
-    if (updates.length > 0) {
-      this.wled.sendPixels(updates).then(() => {
-        console.log('WLED sent', Date.now());
-        setTimeout(this.updateLED.bind(this), 1000)
-      }).catch((err) => {
-        console.log('WLED error.Not retrying', err);
-      });
-    }
+    // Send the updates to WLED via a Fetch request
+    if (!updates.length) {
+      console.log('No updates to send', Date.now());
+      setTimeout(this.updateLED.bind(this), 1000)
+      return;
+    };
 
-
+    // Send the updates to WLED via a Fetch request
+    // This is the slow part that blocks Websocketrs
+    this.wled.sendPixels(updates).then(() => {
+      console.log('WLED sent', Date.now());
+      setTimeout(this.updateLED.bind(this), 1000)
+    }).catch((err) => {
+      console.log('WLED error.Not retrying', err);
+    });
   }
 }
 
