@@ -207,22 +207,15 @@ export class WledGridClient {
     const bodyData = {
       on: true,
       tt: 40,
-      v: true,
+      v: false, // Should the JSON payload come back with the entire WLED State?
       seg
     };
     // if(ttUnits != null) body.tt = ttUnits;
     // if (verbose) body.v = true;
 
     const url = `${this.baseUrl}/json`;
-    console.log('WLED url', url);
-    console.log(bodyData, { depth: null });
-    const response = await postJson(url, bodyData).catch(err => {
-      console.log('WLED error', err);
-      return null;
-    });
-    if (!response.ok) {
-      throw new Error(`WLED pixel update failed: ${response.status} ${response.statusText}`);
-    }
+    console.log('SENDING');
+    return postJson(url, bodyData);
   }
 }
 

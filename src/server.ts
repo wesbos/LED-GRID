@@ -3,6 +3,7 @@ import { routePartykitRequest, Server, type Connection, } from "partyserver";
 import { rateLimit } from "./limiter";
 import { GRID_SIZE, TOTAL_CELLS } from "./constants";
 import WledGridClient from "./wled";
+import { toHex } from "./utils";
 
 const json = (response: any) =>
   new Response(JSON.stringify(response), {
@@ -66,7 +67,7 @@ export class GridServer extends Server {
 
       // Start WLED sync loop (decoupled from client draw events)
       const syncIntervalMs = 1000;
-      this.startWledSyncLoop(syncIntervalMs);
+      this.updateLED(syncIntervalMs);
 
     } catch (err) {
       console.error('Error loading state:', err);
@@ -113,15 +114,15 @@ export class GridServer extends Server {
 
   onMessage(connection: Connection, message: string) {
     // Rate limit incoming messages
-    // rateLimit(sender, 100, () => {
+    rateLimit(connection.id, 100, () => {
       try {
         const data = JSON.parse(message);
         if (data.type === 'draw' &&
-            typeof data.x === 'number' &&
-            typeof data.y === 'number' &&
-            typeof data.color === 'string' &&
-            data.x >= 0 && data.x < GRID_SIZE &&
-            data.y >= 0 && data.y < GRID_SIZE) {
+          typeof data.x === 'number' &&
+          typeof data.y === 'number' &&
+          typeof data.color === 'string' &&
+          data.x >= 0 && data.x < GRID_SIZE &&
+          data.y >= 0 && data.y < GRID_SIZE) {
 
           const index = data.y * GRID_SIZE + data.x;
 
@@ -164,76 +165,53 @@ export class GridServer extends Server {
       } catch (err) {
         console.error('Failed to parse message:', err);
       }
-    // });
+    });
   }
 
-  // Convert various color strings (e.g. '#RRGGBB' or 'rgb(r,g,b)') to WLED hex without '#'
-  private toHex(color: string | undefined): string {
-    if (!color) return '000000';
-    const c = color.trim();
-    if (c.startsWith('#')) {
-      const hex = c.slice(1);
-      if (hex.length === 3) {
-        const r = hex[0];
-        const g = hex[1];
-        const b = hex[2];
-        return (r + r + g + g + b + b).toUpperCase();
-      }
-      return hex.slice(0, 6).toUpperCase();
-    }
-    const m = c.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i)
-      || c.match(/^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0|0?\.\d+|1(?:\.0)?)\s*\)$/i);
-    if (m) {
-      const r = Math.max(0, Math.min(255, Number(m[1])));
-      const g = Math.max(0, Math.min(255, Number(m[2])));
-      const b = Math.max(0, Math.min(255, Number(m[3])));
-      const hex = (n: number) => n.toString(16).padStart(2, '0');
-      return `${hex(r)}${hex(g)}${hex(b)}`.toUpperCase();
-    }
-    // Fallback: assume already hex without '#'
-    return c.toUpperCase();
-  }
 
-  private startWledSyncLoop(intervalMs: number) {
-    if (this.wledSyncTimer) clearInterval(this.wledSyncTimer);
-    this.wledSyncTimer = setInterval(() => {
-      try {
-        if (!this.wled) {
-          console.log('No WLED client');
-          return;
-        };
-        if (this.dirtyIndices.size === 0) {
-          console.log('No dirty indices');
-          return;
-        };
-        const updates: { index: number; color: string }[] = [];
-        let count = 0;
-        // Drain up to MAX_UPDATES_PER_TICK dirty indices
-        for (const idx of this.dirtyIndices) {
-          this.dirtyIndices.delete(idx);
-          const color = this.gridState[idx]?.color;
-          const hex = this.toHex(color);
-          updates.push({ index: idx, color: hex });
-          count++;
-          if (count >= this.MAX_UPDATES_PER_TICK) {
-            break;
-          };
-        }
-        if (updates.length > 0) {
-          this.wled.sendPixels(updates).catch((err) => {
-            console.log('WLED error', err);
-          });
-        }
-      } catch (err) {
-        // Keep loop resilient
-      }
-    }, Math.max(10, Math.round(intervalMs)));
+
+  private updateLED(intervalMs: number) {
+
+
+    if (!this.wled) {
+      console.log('No WLED client');
+      setTimeout(this.updateLED.bind(this), 1000)
+      return;
+    };
+    if (this.dirtyIndices.size === 0) {
+      console.log('No dirty indices', Date.now());
+      setTimeout(this.updateLED.bind(this), 1000)
+      return;
+    };
+    const updates: { index: number; color: string }[] = [];
+    let count = 0;
+    // Drain up to MAX_UPDATES_PER_TICK dirty indices
+    for (const idx of this.dirtyIndices) {
+      this.dirtyIndices.delete(idx);
+      const color = this.gridState[idx]?.color;
+      const hex = toHex(color);
+      updates.push({ index: idx, color: hex });
+      count++;
+      // if (count >= this.MAX_UPDATES_PER_TICK) {
+      //   break;
+      // };
+    }
+    if (updates.length > 0) {
+      this.wled.sendPixels(updates).then(() => {
+        console.log('WLED sent', Date.now());
+        setTimeout(this.updateLED.bind(this), 1000)
+      }).catch((err) => {
+        console.log('WLED error.Not retrying', err);
+      });
+    }
+
+
   }
 }
 
 export default {
   // Set up your fetch handler to use configured Servers
-  fetch(request, env) {
+  fetch(request: Request, env: any) {
     return (
       routePartykitRequest(request, env) ||
       new Response("Not Found", { status: 404 })
