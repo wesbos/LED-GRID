@@ -3,10 +3,7 @@ import throttle from "lodash/throttle";
 import PartySocket from "partysocket";
 import { GRID_SIZE, TOTAL_CELLS } from "./constants";
 
-// const PARTYKIT_HOST: string = `${window.location.origin}/party`;
-const PARTYKIT_HOST: string = `http://localhost:5555`;
-
-console.log("PARTYKIT_HOST", PARTYKIT_HOST);
+const PARTYKIT_HOST: string = `${window.location.origin}/party`;
 
 // Set grid size CSS variable
 document.documentElement.style.setProperty('--grid-size', GRID_SIZE.toString());

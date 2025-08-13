@@ -6,7 +6,7 @@
     "backend": "wrangler dev",
     "frontend": "vite",
     "dev": "npm-run-all --parallel backend frontend",
-    "deploy": "partykit deploy"
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "lodash": "^4.17.21",
@@ -17,6 +17,7 @@
   "devDependencies": {
     "@types/lodash": "^4.17.20",
     "npm-run-all": "^4.1.5",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "wrangler": "^4.29.0"
   }
 }

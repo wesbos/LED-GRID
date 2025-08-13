@@ -1,13 +1,5 @@
-/*
-  WLED Grid Control Library (server-side)
-
-  Provides a high-level API to update a WLED-powered LED matrix using the
-  WLED JSON API over HTTP. Designed to run in server environments (e.g.,
-  PartyKit Worker) where `fetch` is available.
-
-  References: WLED JSON API
-  - See: https://kno.wled.ge/interfaces/json-api/
-*/
+import { WorkerEntrypoint } from "cloudflare:workers";
+import { GRID_SIZE } from '../constants';
 
 export type Rgb = {
   r: number;
@@ -43,6 +35,9 @@ export type WledGridOptions = {
   defaultTransitionMs?: number; // optional transition applied to flush; default 0
   powerOnOnWrite?: boolean; // default true - ensure device is on when writing
   includeVerboseResponse?: boolean; // sets `v: true` to request state response; default false
+  // WebSocket behavior
+  useWebSocket?: boolean; // if true, send updates over ws://[base]/ws when available; default false
+  webSocketPath?: string; // path of websocket endpoint; default "/ws"
 };
 
 export type FlushOptions = {
@@ -118,7 +113,7 @@ function computeIndex(
   return ny * width + nx;
 }
 
-async function postJson(url: string, body: unknown): Promise<Response> {
+function postJson(url: string, body: unknown): Promise<Response> {
   return fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json; charset=UTF-8" },
@@ -137,6 +132,14 @@ export class WledGridClient {
   private readonly defaultTransitionMs?: number;
   private readonly powerOnOnWrite: boolean;
   private readonly includeVerboseResponse: boolean;
+  private readonly useWebSocket: boolean;
+  private readonly webSocketPath: string;
+
+  // WebSocket connection (optional, controlled by options)
+  private ws: any | null = null;
+  private wsOpen = false;
+  private wsReadyPromise: Promise<void> | null = null;
+  private wsMessageQueue: string[] = [];
 
   // Flushing logic removed; this library only sends immediate calls
 
@@ -151,6 +154,8 @@ export class WledGridClient {
     this.defaultTransitionMs = options.defaultTransitionMs;
     this.powerOnOnWrite = options.powerOnOnWrite ?? true;
     this.includeVerboseResponse = options.includeVerboseResponse ?? false;
+    this.useWebSocket = options.useWebSocket ?? false;
+    this.webSocketPath = options.webSocketPath ?? "/ws";
   }
 
   // Brightness 1..255 (WLED uses 1..255, 0 is allowed but better use on:false)
@@ -202,22 +207,126 @@ export class WledGridClient {
     if (iArray.length === 0) return;
 
     const seg: any = { id: this.segmentId, i: iArray };
-    console.log(seg);
-    // const body: any = { on: powerOn, seg: [seg] };
-    const bodyData = {
-      on: true,
-      tt: 40,
-      v: false, // Should the JSON payload come back with the entire WLED State?
-      seg
+    const bodyData: any = {
+      on: powerOn,
+      seg: [seg],
     };
-    // if(ttUnits != null) body.tt = ttUnits;
-    // if (verbose) body.v = true;
+    if (ttUnits != null) bodyData.tt = ttUnits;
+    if (verbose) bodyData.v = true;
 
+    // Prefer WebSocket if enabled and available per https://kno.wled.ge/interfaces/websocket/
+    if (await this.ensureWebSocket()) {
+      const payload = JSON.stringify(bodyData);
+      this.sendOverWebSocket(payload);
+      return;
+    }
+
+    // Fallback to HTTP POST
     const url = `${this.baseUrl}/json`;
-    console.log('SENDING');
-    return postJson(url, bodyData);
+    const start = Date.now();
+    await postJson(url, bodyData);
+    console.log('WLED HTTP sent in', Date.now() - start, 'ms');
+
+  }
+
+  private buildWebSocketUrl(): string {
+    const u = new URL(this.webSocketPath, this.baseUrl);
+    u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+    return u.toString();
+  }
+
+  private async ensureWebSocket(): Promise<boolean> {
+    if (!this.useWebSocket) return false;
+    const WS: any = (globalThis as any).WebSocket;
+    if (!WS) return false;
+    if (this.ws && this.wsOpen) return true;
+    if (this.wsReadyPromise) {
+      try {
+        await this.wsReadyPromise;
+        return this.wsOpen;
+      } catch {
+        return false;
+      }
+    }
+
+    this.wsReadyPromise = new Promise<void>((resolve, reject) => {
+      try {
+        const wsUrl = this.buildWebSocketUrl();
+        const ws = new WS(wsUrl);
+        this.ws = ws;
+        ws.onopen = () => {
+          this.wsOpen = true;
+          // Optionally request full state if verbose is generally desired
+          if (this.includeVerboseResponse) {
+            try { ws.send(JSON.stringify({ v: true })); } catch {}
+          }
+          // Flush any queued messages
+          for (const msg of this.wsMessageQueue) {
+            try { ws.send(msg); } catch {}
+          }
+          this.wsMessageQueue = [];
+          resolve();
+        };
+        ws.onclose = () => {
+          this.wsOpen = false;
+          this.wsReadyPromise = null;
+        };
+        ws.onerror = () => {
+          this.wsOpen = false;
+          this.wsReadyPromise = null;
+          reject(new Error('WebSocket error'));
+        };
+      } catch (err) {
+        this.wsOpen = false;
+        this.wsReadyPromise = null;
+        reject(err as any);
+      }
+    });
+
+    try {
+      await this.wsReadyPromise;
+      return this.wsOpen;
+    } catch {
+      return false;
+    }
+  }
+
+  private sendOverWebSocket(message: string): void {
+    if (!this.ws || !this.wsOpen) {
+      this.wsMessageQueue.push(message);
+      return;
+    }
+    try {
+      this.ws.send(message);
+    } catch {
+      this.wsMessageQueue.push(message);
+    }
   }
 }
 
-export default WledGridClient;
+// We cannot use the mdns address as it was causing the
+// websockets to queue when a fetch request was made.
+// const baseUrl = 'http://wled-grid.local';
 
+// Using the IP address of the hardware is fine
+const baseUrl = 'http://192.168.1.100';
+
+// const baseUrl = 'https://local.wesbos.com/';
+
+export const wled = new WledGridClient({
+  baseUrl,
+  gridWidth: GRID_SIZE,
+  gridHeight: GRID_SIZE,
+  serpentine: false,
+  orientation: 'top-left',
+  defaultTransitionMs: 0,
+  includeVerboseResponse: false,
+  useWebSocket: true,
+});
+
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export default WledGridClient;

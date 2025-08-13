@@ -2,7 +2,7 @@
 import { routePartykitRequest, Server, type Connection, } from "partyserver";
 import { rateLimit } from "./limiter";
 import { GRID_SIZE, TOTAL_CELLS } from "./constants";
-import WledGridClient from "./wled";
+import WledGridClient, { wled } from "./wled/wled";
 import { toHex } from "./utils";
 
 const json = (response: any) =>
@@ -11,6 +11,10 @@ const json = (response: any) =>
       "Content-Type": "application/json",
     },
   });
+
+
+  let count = 0;
+
 
 export class GridServer extends Server {
   static options = { hibernate: true };
@@ -49,18 +53,6 @@ export class GridServer extends Server {
           color: cell?.color ?? undefined
         }));
       }
-
-      // Initialize WLED client
-      const baseUrl = 'http://wled-grid.local';
-      this.wled = new WledGridClient({
-        baseUrl,
-        gridWidth: GRID_SIZE,
-        gridHeight: GRID_SIZE,
-        serpentine: false,
-        orientation: 'top-left',
-        defaultTransitionMs: 0,
-        includeVerboseResponse: false,
-      });
 
       // Mark all cells dirty for initial sync; the sync loop will trickle these out.
       for (let i = 0; i < TOTAL_CELLS; i++) this.dirtyIndices.add(i);
@@ -170,17 +162,10 @@ export class GridServer extends Server {
 
 
 
-  private updateLED(intervalMs: number) {
-
-    if (!this.wled) {
-      console.log('No WLED client');
-      setTimeout(this.updateLED.bind(this), 1000)
-      return;
-    };
-
+  private updateLED() {
     if (this.dirtyIndices.size === 0) {
-      console.log('No dirty indices', Date.now());
-      setTimeout(this.updateLED.bind(this), 1000)
+      // console.log('No dirty indices', Date.now());
+      setTimeout(this.updateLED.bind(this), 200)
       return;
     };
 
@@ -201,11 +186,36 @@ export class GridServer extends Server {
       return;
     };
 
+    // console.log('Sending updates to worker B');
+    // console.log(this.env.WORKER_B);
+    // const result = await this.env.WORKER_B.add(1, 2);
+    // console.log({result});
+    // setTimeout(this.updateLED.bind(this), 1000)
+
+
+    // console.log(`Sending ${updates.length} updates to worker B`);
+    // // this.env.WORKER_B.sendPixels(updates);
+    //     fetch('https://httpbin.org/delay/3').then(x => {
+    //       console.log('WLED sent', Date.now());
+    //       console.log('Slow fetch done!');
+    //       setTimeout(this.updateLED.bind(this), 1000)
+    //     });
+
+
+
+    // try emit the update over a socket
+    // this.broadcast(JSON.stringify({ type: 'LED_UPDATE', updates }));
+    // console.log('LED_UPDATE sent', Date.now());
+    // setTimeout(this.updateLED.bind(this), 1000)
+
+
     // Send the updates to WLED via a Fetch request
-    // This is the slow part that blocks Websocketrs
-    this.wled.sendPixels(updates).then(() => {
-      console.log('WLED sent', Date.now());
-      setTimeout(this.updateLED.bind(this), 1000)
+    // This is the slow part that blocks websockets
+    const start = Date.now();
+    wled.sendPixels(updates).then(() => {
+      console.log('WLED Fetch done in ', Math.round((Date.now() - start)), 'ms');
+      setTimeout(this.updateLED.bind(this), 100)
+
     }).catch((err) => {
       console.log('WLED error.Not retrying', err);
     });
@@ -214,9 +224,11 @@ export class GridServer extends Server {
 
 export default {
   // Set up your fetch handler to use configured Servers
-  fetch(request: Request, env: any) {
+  async fetch(request: Request, env: any) {
     return (
-      routePartykitRequest(request, env) ||
+      routePartykitRequest(request, env, {
+        prefix: 'party/parties'
+      }) ||
       new Response("Not Found", { status: 404 })
     );
   }
