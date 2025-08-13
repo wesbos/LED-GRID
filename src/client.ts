@@ -102,6 +102,7 @@ const socket = new PartySocket({
 const grid = document.querySelector('.grid')!;
 const colorPicker = document.querySelector('#colorPicker') as HTMLInputElement;
 const presetButtons = document.querySelectorAll('.preset-btn');
+const clearButton = document.getElementById('clearButton') as HTMLButtonElement | null;
 const gridState: { color: string | undefined }[] = Array(TOTAL_CELLS).fill(null).map(() => ({ color: undefined }));
 
 let isDrawing = false;
@@ -150,7 +151,7 @@ presetButtons.forEach(btn => {
   btn.addEventListener('click', () => {
     const btnElement = btn as HTMLElement;
     if (btnElement.classList.contains('eraser')) {
-      // clearGrid();
+      clearGrid();
     } else {
       currentColor = btnElement.dataset.color!;
       colorPicker.value = currentColor;
@@ -176,6 +177,13 @@ const clearGrid = () => {
     type: 'clear'
   }));
 };
+
+// Wire Clear button
+clearButton?.addEventListener('click', () => {
+  clearGrid();
+});
+
+
 
 const drawBatchOfCells = (pixels: number[], color: string) => {
   pixels.forEach(index => {

@@ -121,6 +121,15 @@ function postJson(url: string, body: unknown): Promise<Response> {
   });
 }
 
+function byteLengthUtf8(input: string): number {
+  try {
+    return new TextEncoder().encode(input).length;
+  } catch {
+    // Fallback approximation
+    return input.length;
+  }
+}
+
 export class WledGridClient {
   private readonly baseUrl: string;
   private readonly segmentId: number;
@@ -131,8 +140,8 @@ export class WledGridClient {
   private readonly requestTimeoutMs: number;
   private readonly defaultTransitionMs?: number;
   private readonly powerOnOnWrite: boolean;
-  private readonly includeVerboseResponse: boolean;
-  private readonly useWebSocket: boolean;
+
+  public readonly useWebSocket: boolean;
   private readonly webSocketPath: string;
 
   // WebSocket connection (optional, controlled by options)
@@ -153,50 +162,52 @@ export class WledGridClient {
     this.requestTimeoutMs = options.requestTimeoutMs ?? 4000;
     this.defaultTransitionMs = options.defaultTransitionMs;
     this.powerOnOnWrite = options.powerOnOnWrite ?? true;
-    this.includeVerboseResponse = options.includeVerboseResponse ?? false;
+
     this.useWebSocket = options.useWebSocket ?? false;
     this.webSocketPath = options.webSocketPath ?? "/ws";
+
+    // Log chosen transport at startup
+    try {
+      const hasWS = typeof (globalThis as any).WebSocket !== 'undefined';
+      if (this.useWebSocket && hasWS) {
+        console.log(`[USING WEBSOCKET]`, this.buildWebSocketUrl());
+      } else {
+        console.log(`[USING HTTP]`, `${this.baseUrl}/json`);
+      }
+    } catch (_) {
+      // ignore logging errors
+    }
   }
 
-  // Brightness 1..255 (WLED uses 1..255, 0 is allowed but better use on:false)
-  async setBrightness(
-    brightness: number,
-    opts?: BrightnessOptions
-  ): Promise<any | void> {
-    const bri = Math.max(0, Math.min(255, Math.round(brightness)));
+  async setRangeColor(startIndexInclusive: number, stopIndexExclusive: number, color: HexColor | Rgb): Promise<void> {
+    const start = Math.max(0, Math.min(startIndexInclusive, this.gridWidth * this.gridHeight));
+    const stop = Math.max(start, Math.min(stopIndexExclusive, this.gridWidth * this.gridHeight));
+    const hex = normalizeHex(color);
     const body: any = {
-      on: opts?.powerOn ?? this.powerOnOnWrite,
-      bri,
+      on: this.powerOnOnWrite,
+      seg: [{ id: this.segmentId, i: [start, stop, hex] }],
+      v: false,
     };
-
-    const ttUnits = msToTtUnits(opts?.transitionMs);
-    if (ttUnits != null) body.tt = ttUnits;
-    if (opts?.verboseResponse ?? this.includeVerboseResponse) body.v = true;
-
-    const url = `${this.baseUrl}/json/state`;
-    const response = await postJson(url, body);
-    if (!response.ok) {
-      throw new Error(`WLED brightness update failed: ${response.status} ${response.statusText}`);
+    const payload = JSON.stringify(body);
+    const willUseWS = await this.ensureWebSocket();
+    if (willUseWS) {
+      this.sendOverWebSocket(payload);
+      return;
     }
-    if (opts?.verboseResponse ?? this.includeVerboseResponse) {
-      return response.json();
-    }
+    const url = `${this.baseUrl}/json`;
+    await postJson(url, body);
   }
 
-  // Flushing and queuing removed. Use sendPixels / sendPixelIndex / sendPixelXY instead.
-  async sendPixelXY(x: number, y: number, color: HexColor | Rgb, opts?: FlushOptions): Promise<void> {
-    const index = computeIndex(x, y, this.gridWidth, this.gridHeight, this.serpentine, this.orientation);
-    return this.sendPixelIndex(index, color, opts);
+  async clearAll(): Promise<void> {
+    const total = this.gridWidth * this.gridHeight;
+    return this.setRangeColor(0, total, "000000");
   }
 
-  async sendPixelIndex(index: number, color: HexColor | Rgb, opts?: FlushOptions): Promise<void> {
-    return this.sendPixels([{ index, color }], opts);
-  }
 
   async sendPixels(pixels: Array<PixelUpdate>, opts?: FlushOptions): Promise<void> {
     if (!pixels.length) return;
     const powerOn = opts?.powerOn ?? this.powerOnOnWrite;
-    const verbose = opts?.verboseResponse ?? this.includeVerboseResponse;
+
     const ttUnits = msToTtUnits(opts?.transitionMs ?? this.defaultTransitionMs);
 
     const iArray: Array<number | string> = [];
@@ -210,22 +221,76 @@ export class WledGridClient {
     const bodyData: any = {
       on: powerOn,
       seg: [seg],
+      // Verbose response
+      v: true
     };
     if (ttUnits != null) bodyData.tt = ttUnits;
-    if (verbose) bodyData.v = true;
 
-    // Prefer WebSocket if enabled and available per https://kno.wled.ge/interfaces/websocket/
-    if (await this.ensureWebSocket()) {
-      const payload = JSON.stringify(bodyData);
-      this.sendOverWebSocket(payload);
-      return;
+    // Determine transport and its size limit
+    const willUseWS = await this.ensureWebSocket();
+    const limit = willUseWS ? 1400 : 24000;
+
+    // Chunk the i-array so each JSON payload stays under the limit
+    let startIndex = 0;
+    let chunkNumber = 1;
+    const totalPairs = iArray.length / 2;
+    while (startIndex < iArray.length) {
+      let endIndex = startIndex;
+      let lastGoodEnd = startIndex;
+      let lastGoodPayload = '';
+      let lastGoodBytes = 0;
+      while (endIndex < iArray.length) {
+        // grow by one pair [index, hex]
+        endIndex += 2;
+        const iSub = iArray.slice(startIndex, endIndex);
+        const bodySub: any = {
+          on: powerOn,
+          seg: [{ id: this.segmentId, i: iSub }],
+          v: true,
+        };
+        if (ttUnits != null) bodySub.tt = ttUnits;
+        const payloadStrSub = JSON.stringify(bodySub);
+        const bytes = byteLengthUtf8(payloadStrSub);
+        if (bytes <= limit) {
+          lastGoodEnd = endIndex;
+          lastGoodPayload = payloadStrSub;
+          lastGoodBytes = bytes;
+        } else {
+          break;
+        }
+      }
+
+      // Ensure we always make progress
+      if (lastGoodEnd === startIndex) {
+        // force at least one pair per chunk
+        const iSub = iArray.slice(startIndex, startIndex + 2);
+        const bodySub: any = {
+          on: powerOn,
+          seg: [{ id: this.segmentId, i: iSub }],
+          v: true,
+        };
+        if (ttUnits != null) bodySub.tt = ttUnits;
+        lastGoodPayload = JSON.stringify(bodySub);
+        lastGoodBytes = byteLengthUtf8(lastGoodPayload);
+        lastGoodEnd = startIndex + 2;
+      }
+
+      const pixelsInChunk = (lastGoodEnd - startIndex) / 2;
+      const modeLabel = willUseWS ? '[ws]' : '[http]';
+      console.log(`[WLED] ${modeLabel} chunk`, chunkNumber, `${lastGoodBytes} bytes`, `${pixelsInChunk} pixels`);
+
+      if (willUseWS) {
+        this.sendOverWebSocket(lastGoodPayload);
+      } else {
+        const url = `${this.baseUrl}/json`;
+        const start = Date.now();
+        await postJson(url, JSON.parse(lastGoodPayload));
+        console.log('WLED HTTP chunk sent in', Math.round(Date.now() - start), 'ms');
+      }
+
+      startIndex = lastGoodEnd;
+      chunkNumber += 1;
     }
-
-    // Fallback to HTTP POST
-    const url = `${this.baseUrl}/json`;
-    const start = Date.now();
-    await postJson(url, bodyData);
-    console.log('WLED HTTP sent in', Date.now() - start, 'ms');
 
   }
 
@@ -237,8 +302,7 @@ export class WledGridClient {
 
   private async ensureWebSocket(): Promise<boolean> {
     if (!this.useWebSocket) return false;
-    const WS: any = (globalThis as any).WebSocket;
-    if (!WS) return false;
+    if (!WebSocket) return false;
     if (this.ws && this.wsOpen) return true;
     if (this.wsReadyPromise) {
       try {
@@ -252,14 +316,11 @@ export class WledGridClient {
     this.wsReadyPromise = new Promise<void>((resolve, reject) => {
       try {
         const wsUrl = this.buildWebSocketUrl();
-        const ws = new WS(wsUrl);
+        const ws = new WebSocket(wsUrl);
         this.ws = ws;
         ws.onopen = () => {
+          console.log(`[WS] OPENED`);
           this.wsOpen = true;
-          // Optionally request full state if verbose is generally desired
-          if (this.includeVerboseResponse) {
-            try { ws.send(JSON.stringify({ v: true })); } catch {}
-          }
           // Flush any queued messages
           for (const msg of this.wsMessageQueue) {
             try { ws.send(msg); } catch {}
@@ -267,16 +328,27 @@ export class WledGridClient {
           this.wsMessageQueue = [];
           resolve();
         };
+        ws.onmessage = (event: MessageEvent) => {
+          const data = event.data;
+          if (typeof data === 'string' && data.startsWith('{"error"')) {
+            console.error(`[WS] MESSAGE ERROR`, data);
+          } else {
+            // console.log(`[WS] MESSAGE`, data);
+          }
+        };
         ws.onclose = () => {
+          console.log(`[WS] CLOSED`);
           this.wsOpen = false;
           this.wsReadyPromise = null;
         };
-        ws.onerror = () => {
+        ws.onerror = (err: unknown) => {
+          console.log(`[WS] ERROR`, err);
           this.wsOpen = false;
           this.wsReadyPromise = null;
           reject(new Error('WebSocket error'));
         };
       } catch (err) {
+        console.log(`[WS] ERROR crea`, err);
         this.wsOpen = false;
         this.wsReadyPromise = null;
         reject(err as any);
@@ -311,8 +383,6 @@ export class WledGridClient {
 // Using the IP address of the hardware is fine
 const baseUrl = 'http://192.168.1.100';
 
-// const baseUrl = 'https://local.wesbos.com/';
-
 export const wled = new WledGridClient({
   baseUrl,
   gridWidth: GRID_SIZE,
@@ -324,9 +394,5 @@ export const wled = new WledGridClient({
   useWebSocket: true,
 });
 
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export default WledGridClient;
