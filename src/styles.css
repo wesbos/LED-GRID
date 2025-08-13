@@ -8,6 +8,8 @@
 
 :root {
   --grid-size: 16;
+  --grid-width: 16;
+  --grid-height: 16;
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --bg-dark: #000;
@@ -24,60 +26,6 @@
   --accent-light: #3291ff;
   --border-light: #eaeaea;
   --border-dark: #333;
-}
-
-@media (prefers-color-scheme: dark) {
-  body {
-    background: var(--bg-dark);
-    color: var(--text-dark);
-  }
-
-  .preset-btn {
-    border-color: var(--gray-800);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  }
-
-  .preset-btn.active {
-    border-color: var(--accent);
-  }
-
-  .preset-btn:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  }
-
-  .grid {
-    background: var(--gray-900);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3),
-      0 0 0 1px rgba(255, 255, 255, 0.05);
-  }
-
-  .user-count {
-    background: var(--gray-800);
-    color: var(--gray-200);
-  }
-
-  .text-input-form input {
-    background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(10px);
-    border-color: var(--border-dark);
-    color: var(--text-dark);
-  }
-
-  .text-input-form button {
-    background: var(--accent);
-  }
-
-  .text-input-form button:hover {
-    background: var(--accent-light);
-  }
-
-  .color-picker::-webkit-color-swatch {
-    border-color: var(--border-dark);
-  }
-
-  h1::after {
-    opacity: 0.3;
-  }
 }
 
 body {
@@ -278,10 +226,11 @@ h6 {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(var(--grid-size), 1fr);
-  grid-template-rows: repeat(var(--grid-size), 1fr);
-  aspect-ratio: 1;
-  width: min(800px, 90vh);
+  grid-template-columns: repeat(var(--grid-width), 1fr);
+  grid-template-rows: repeat(var(--grid-height), 1fr);
+  aspect-ratio: var(--grid-width) / var(--grid-height);
+  /* width: min(1000px, 90vh); */
+  width: 100%;
   background: var(--gray-100);
   gap: 1px;
   padding: 1px;

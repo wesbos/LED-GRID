@@ -1,12 +1,12 @@
-import "./styles.css";
 import throttle from "lodash/throttle";
 import PartySocket from "partysocket";
-import { GRID_SIZE, TOTAL_CELLS } from "./constants";
+import { GRID_WIDTH, GRID_HEIGHT, TOTAL_CELLS } from "./constants";
 
 const PARTYKIT_HOST: string = `${window.location.origin}/party`;
 
 // Set grid size CSS variable
-document.documentElement.style.setProperty('--grid-size', GRID_SIZE.toString());
+document.documentElement.style.setProperty('--grid-width', GRID_WIDTH.toString());
+document.documentElement.style.setProperty('--grid-height', GRID_HEIGHT.toString());
 
 // Function to sample image and draw to grid
 const drawImageToGrid = async (file: File) => {
@@ -16,19 +16,19 @@ const drawImageToGrid = async (file: File) => {
 
   img.onload = () => {
     // Set canvas size to match our grid
-    canvas.width = GRID_SIZE;
-    canvas.height = GRID_SIZE;
+    canvas.width = GRID_WIDTH;
+    canvas.height = GRID_HEIGHT;
 
     // Draw and scale image to fit our grid size
-    ctx.drawImage(img, 0, 0, GRID_SIZE, GRID_SIZE);
+    ctx.drawImage(img, 0, 0, GRID_WIDTH, GRID_HEIGHT);
 
     const pixelsWithColors: { index: number, color: string }[] = [];
     // Sample each pixel and collect coordinates with colors
-    for (let y = 0; y < GRID_SIZE; y++) {
-      for (let x = 0; x < GRID_SIZE; x++) {
+    for (let y = 0; y < GRID_HEIGHT; y++) {
+      for (let x = 0; x < GRID_WIDTH; x++) {
         const pixel = ctx.getImageData(x, y, 1, 1).data;
         const color = `rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`;
-        const index = y * GRID_SIZE + x;
+        const index = y * GRID_WIDTH + x;
         pixelsWithColors.push({ index, color });
       }
     }
@@ -37,8 +37,8 @@ const drawImageToGrid = async (file: File) => {
     pixelsWithColors.forEach(({ index, color }) => {
       socket.send(JSON.stringify({
         type: 'draw',
-        x: index % GRID_SIZE,
-        y: Math.floor(index / GRID_SIZE),
+        x: index % GRID_WIDTH,
+        y: Math.floor(index / GRID_WIDTH),
         color
       }));
     });
@@ -124,8 +124,9 @@ const createGrid = () => {
 // Initialize the grid
 createGrid();
 
-// Update grid size CSS variable
-document.documentElement.style.setProperty('--grid-size', GRID_SIZE.toString());
+// Update grid size CSS variables
+document.documentElement.style.setProperty('--grid-width', GRID_WIDTH.toString());
+document.documentElement.style.setProperty('--grid-height', GRID_HEIGHT.toString());
 
 // Color handling
 // Update active state of preset buttons
@@ -166,8 +167,8 @@ presetButtons.forEach(btn => {
 const drawCell = (index: number, color: string | undefined) => {
   socket.send(JSON.stringify({
     type: 'draw',
-    x: index % GRID_SIZE,
-    y: Math.floor(index / GRID_SIZE),
+    x: index % GRID_WIDTH,
+    y: Math.floor(index / GRID_WIDTH),
     color
   }));
 };
@@ -189,8 +190,8 @@ const drawBatchOfCells = (pixels: number[], color: string) => {
   pixels.forEach(index => {
     socket.send(JSON.stringify({
       type: 'draw',
-      x: index % GRID_SIZE,
-      y: Math.floor(index / GRID_SIZE),
+      x: index % GRID_WIDTH,
+      y: Math.floor(index / GRID_WIDTH),
       color
     }));
   });
@@ -252,27 +253,28 @@ const drawText = async (text: string, color: string) => {
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d')!;
-  canvas.width = GRID_SIZE;
-  canvas.height = GRID_SIZE;
+  canvas.width = GRID_WIDTH;
+  canvas.height = GRID_HEIGHT;
 
   // Adjust font size based on text length
-  const fontSize = Math.min(48, Math.floor(GRID_SIZE / text.length) * 1.5);
+  const minDim = Math.min(GRID_WIDTH, GRID_HEIGHT);
+  const fontSize = Math.min(48, Math.floor(minDim / Math.max(1, text.length)) * 1.5);
   ctx.font = `bold ${fontSize}px Arial`;
   ctx.fillStyle = 'white';
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
 
   // Center text
-  ctx.fillText(text, GRID_SIZE/2, GRID_SIZE/2);
+  ctx.fillText(text, GRID_WIDTH/2, GRID_HEIGHT/2);
 
   const pixels: number[] = [];
 
   // Collect all pixels that need to be drawn
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
+  for (let y = 0; y < GRID_HEIGHT; y++) {
+    for (let x = 0; x < GRID_WIDTH; x++) {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
       if (pixel[3] > 0) {
-        const index = y * GRID_SIZE + x;
+        const index = y * GRID_WIDTH + x;
         pixels.push(index);
       }
     }

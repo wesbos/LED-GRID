@@ -1,7 +1,7 @@
 // import type * as Party from "partykit/server";
 import { routePartykitRequest, Server, type Connection, } from "partyserver";
 import { rateLimit } from "./limiter";
-import { GRID_SIZE, TOTAL_CELLS } from "./constants";
+import { GRID_WIDTH, GRID_HEIGHT, TOTAL_CELLS } from "./constants";
 import { wled } from "./wled/wled";
 import { toHex } from "./utils";
 
@@ -15,7 +15,6 @@ const json = (response: any) =>
 
 export class GridServer extends Server {
   static options = { hibernate: true };
-  private connections: Set<Connection> = new Set();
   private dirtyIndices: Set<number> = new Set();
 
   // Initialize grid with all cells undefined
@@ -26,10 +25,11 @@ export class GridServer extends Server {
   }
 
   private broadcastUserCount() {
-    const count = this.connections.size;
+    const connections = Array.from(this.getConnections());
+
     this.broadcast(JSON.stringify({
       type: 'userCount',
-      count
+      count: connections.length
     }));
   }
 
@@ -57,9 +57,6 @@ export class GridServer extends Server {
     }
   }
 
-  async onClose() {
-    console.log(`[SERVER CLOSED]`);
-  }
 
   async onRequest(req: Request) {
     const url = new URL(req.url);
@@ -68,9 +65,6 @@ export class GridServer extends Server {
   }
 
   onConnect(conn: Connection) {
-    // Add connection to set
-    this.connections.add(conn);
-
     // Send current grid state to new connection
     conn.send(JSON.stringify({ type: 'fullState', state: this.gridState }));
 
@@ -79,10 +73,8 @@ export class GridServer extends Server {
 
   }
 
-  onDisconnect(conn: Connection) {
-    // Remove connection from set
-    this.connections.delete(conn);
-
+  onClose(conn: Connection) {
+    // console.log(`[Disconnected]`, conn.id);
     // Broadcast updated user count
     this.broadcastUserCount();
   }
@@ -94,10 +86,10 @@ export class GridServer extends Server {
         typeof data.x === 'number' &&
         typeof data.y === 'number' &&
         typeof data.color === 'string' &&
-        data.x >= 0 && data.x < GRID_SIZE &&
-        data.y >= 0 && data.y < GRID_SIZE) {
+          data.x >= 0 && data.x < GRID_WIDTH &&
+          data.y >= 0 && data.y < GRID_HEIGHT) {
 
-        const index = data.y * GRID_SIZE + data.x;
+        const index = data.y * GRID_WIDTH + data.x;
 
         // Update the cell color
         this.gridState[index] = { color: data.color };
@@ -165,10 +157,10 @@ export class GridServer extends Server {
       return;
     };
 
-    const start = Date.now();
+    // const start = Date.now();
     console.log(`Sending ${updates.length} updates to WLED`);
     wled.sendPixels(updates).then(() => {
-      console.log('WLED Fetch done in ', Math.round((Date.now() - start)), 'ms');
+      // console.log('WLED Fetch done in ', Math.round((Date.now() - start)), 'ms');
       retryFn();
     }).catch((err) => {
       console.log('WLED error.retrying in 5 seconds', err);

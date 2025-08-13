@@ -1,5 +1,5 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { GRID_SIZE } from '../constants';
+import { GRID_WIDTH, GRID_HEIGHT } from '../constants';
 
 export type Rgb = {
   r: number;
@@ -222,13 +222,17 @@ export class WledGridClient {
       on: powerOn,
       seg: [seg],
       // Verbose response
-      v: true
+      // v: true
     };
     if (ttUnits != null) bodyData.tt = ttUnits;
 
     // Determine transport and its size limit
-    const willUseWS = await this.ensureWebSocket();
-    const limit = willUseWS ? 1400 : 24000;
+    const pixelCountTotal = iArray.length / 2;
+    const forceHttpForLargeBatch = pixelCountTotal > 300;
+    const willUseWS = forceHttpForLargeBatch ? false : await this.ensureWebSocket();
+    const WEBSOCKET_LIMIT = 1400;
+    const HTTP_LIMIT = 10000;
+    const limit = willUseWS ? WEBSOCKET_LIMIT : HTTP_LIMIT;
 
     // Chunk the i-array so each JSON payload stays under the limit
     let startIndex = 0;
@@ -246,7 +250,7 @@ export class WledGridClient {
         const bodySub: any = {
           on: powerOn,
           seg: [{ id: this.segmentId, i: iSub }],
-          v: true,
+          v: false,
         };
         if (ttUnits != null) bodySub.tt = ttUnits;
         const payloadStrSub = JSON.stringify(bodySub);
@@ -267,7 +271,7 @@ export class WledGridClient {
         const bodySub: any = {
           on: powerOn,
           seg: [{ id: this.segmentId, i: iSub }],
-          v: true,
+          v: false,
         };
         if (ttUnits != null) bodySub.tt = ttUnits;
         lastGoodPayload = JSON.stringify(bodySub);
@@ -281,10 +285,15 @@ export class WledGridClient {
 
       if (willUseWS) {
         this.sendOverWebSocket(lastGoodPayload);
+        // Wait a bit to avoid overwhelming the server. Delay increases with chunk number
+        await new Promise((resolve) => setTimeout(resolve, chunkNumber * 20));
       } else {
         const url = `${this.baseUrl}/json`;
         const start = Date.now();
-        await postJson(url, JSON.parse(lastGoodPayload));
+        const response = await postJson(url, JSON.parse(lastGoodPayload));
+        if (!response.ok) {
+          console.error(`[WLED] HTTP chunk failed`, response.status, response.statusText);
+        }
         console.log('WLED HTTP chunk sent in', Math.round(Date.now() - start), 'ms');
       }
 
@@ -385,8 +394,8 @@ const baseUrl = 'http://192.168.1.100';
 
 export const wled = new WledGridClient({
   baseUrl,
-  gridWidth: GRID_SIZE,
-  gridHeight: GRID_SIZE,
+  gridWidth: GRID_WIDTH,
+  gridHeight: GRID_HEIGHT,
   serpentine: false,
   orientation: 'top-left',
   defaultTransitionMs: 0,
