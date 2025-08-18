@@ -1,10 +1,12 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import type { RoomInfo, RoomsInfoResponse, SwitchRoomResponse } from '../types';
+import { UtilityPanel } from '../components/UtilityPanel';
 
 export function AdminComponent() {
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [activeRoom, setActiveRoom] = useState<string>('default');
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const loadRooms = async () => {
@@ -15,6 +17,11 @@ export function AdminComponent() {
 
       if (data.type === 'roomsInfo') {
         setRooms(data.rooms);
+        // Update active room state
+        const activeRoomInfo = data.rooms.find((r: RoomInfo) => r.isActive);
+        if (activeRoomInfo) {
+          setActiveRoom(activeRoomInfo.id);
+        }
       }
     } catch (error) {
       console.error('Failed to load rooms:', error);
@@ -31,10 +38,8 @@ export function AdminComponent() {
       const data = await response.json() as SwitchRoomResponse;
 
       if (data.success) {
-        showMessage(data.message, 'success');
+        setActiveRoom(roomId); // Update local state immediately
         await loadRooms(); // Refresh the display
-      } else {
-        showMessage(data.message || 'Failed to switch room', 'error');
       }
     } catch (error) {
       console.error('Failed to switch room:', error);
@@ -113,6 +118,9 @@ export function AdminComponent() {
         <h1>🚦 LED Grid Admin</h1>
         <p>Manage which room is currently displayed on the LED hardware</p>
       </div>
+      <p>hi</p>
+
+      <UtilityPanel roomId={activeRoom} />
 
       <div className="refresh-section">
         <button

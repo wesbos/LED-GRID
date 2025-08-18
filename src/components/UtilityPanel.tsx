@@ -71,9 +71,12 @@ export function UtilityPanel({ roomId }: UtilityPanelProps) {
   }, [roomId]);
 
   return (
-    <div className="utility-panel">
+        <div className="utility-panel">
       <div className="utility-header">
         <h3>📊 Data Utilities</h3>
+        <p className="utility-description">
+          These utilities will display data on the currently active room: <strong>{roomId}</strong>
+        </p>
         {activeUtility && (
           <button
             onClick={stopUtility}

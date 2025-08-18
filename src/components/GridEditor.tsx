@@ -5,7 +5,6 @@ import { useGridState } from '../hooks/useGridState';
 import { drawImageToGrid, drawText } from '../utils/drawingUtils';
 import { ColorPicker, getRandomColor } from './ColorPicker';
 import { Grid } from './Grid';
-import { UtilityPanel } from './UtilityPanel';
 
 interface GridEditorProps {
 	roomId?: string; // undefined for default room, string for specific rooms
@@ -170,8 +169,6 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 					onDragOver={handleDragOver}
 					onDrop={handleDrop}
 				/>
-
-				<UtilityPanel roomId={roomId} />
 
 				<footer>
 					{showRoomInfo ? (

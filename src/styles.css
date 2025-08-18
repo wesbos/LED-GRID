@@ -599,6 +599,13 @@ button:not(.preset-btn):not(.cell):active {
   color: var(--text-primary);
 }
 
+.utility-description {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
 .stop-btn {
   background: #ef4444 !important;
   color: white !important;
