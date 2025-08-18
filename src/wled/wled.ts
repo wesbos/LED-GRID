@@ -231,7 +231,9 @@ export class WledGridClient {
     const forceHttpForLargeBatch = pixelCountTotal > 300;
     const willUseWS = forceHttpForLargeBatch ? false : await this.ensureWebSocket();
     const WEBSOCKET_LIMIT = 1400;
-    const HTTP_LIMIT = 10000;
+    // It seems 2000 is a good limit
+    const HTTP_LIMIT = 5000;
+    const HTTP_WAIT_MS = 2;
     const limit = willUseWS ? WEBSOCKET_LIMIT : HTTP_LIMIT;
 
     // Chunk the i-array so each JSON payload stays under the limit
@@ -281,7 +283,7 @@ export class WledGridClient {
 
       const pixelsInChunk = (lastGoodEnd - startIndex) / 2;
       const modeLabel = willUseWS ? '[ws]' : '[http]';
-      console.log(`[WLED] ${modeLabel} chunk`, chunkNumber, `${lastGoodBytes} bytes`, `${pixelsInChunk} pixels`);
+      console.log(`[WLED] ${modeLabel} chunk`, chunkNumber, ` ${lastGoodBytes} bytes`, `${pixelsInChunk} pixels`);
 
       if (willUseWS) {
         this.sendOverWebSocket(lastGoodPayload);
@@ -291,6 +293,8 @@ export class WledGridClient {
         const url = `${this.baseUrl}/json`;
         const start = Date.now();
         const response = await postJson(url, JSON.parse(lastGoodPayload));
+        // add a 100ms delay to avoid overwhelming the server
+        await new Promise((resolve) => setTimeout(resolve, HTTP_WAIT_MS));
         if (!response.ok) {
           console.error(`[WLED] HTTP chunk failed`, response.status, response.statusText);
         }

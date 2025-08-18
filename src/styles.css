@@ -177,6 +177,21 @@ h6 {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
+.admin-link {
+  color: var(--gray-700);
+  text-decoration: none;
+  font-size: 1.2rem;
+  transition: all 0.2s ease;
+  padding: 0.25rem;
+  border-radius: 6px;
+}
+
+.admin-link:hover {
+  color: var(--accent);
+  background: var(--gray-200);
+  transform: scale(1.1);
+}
+
 .color-picker {
   margin: 0 10px;
   -webkit-appearance: none;

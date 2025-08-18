@@ -12,7 +12,6 @@ const json = (response: any) =>
     },
   });
 
-
 export class GridServer extends Server {
   static options = { hibernate: true };
   private dirtyIndices: Set<number> = new Set();
@@ -20,8 +19,74 @@ export class GridServer extends Server {
   // Initialize grid with all cells undefined
   gridState: { color: string | undefined }[] = this.createEmptyGrid();
 
+  // Room management - static properties to track across instances
+  private static activeRoom: string = "default";
+  private static roomStates: Map<string, { color: string | undefined }[]> = new Map();
+  private static roomConnections: Map<string, Set<string>> = new Map();
+  private static serverInstances: Map<string, GridServer> = new Map();
+
   private createEmptyGrid() {
     return new Array(TOTAL_CELLS).fill(null).map(() => ({ color: undefined }));
+  }
+
+  // Get the current active room
+  static getActiveRoom(): string {
+    return GridServer.activeRoom;
+  }
+
+  // Set the active room and sync to LED
+  static async setActiveRoom(roomId: string): Promise<boolean> {
+    if (roomId === GridServer.activeRoom) {
+      return true; // Already active
+    }
+
+    // Get the state for the new room
+    const newRoomState = GridServer.roomStates.get(roomId);
+    if (!newRoomState) {
+      return false; // Room doesn't exist
+    }
+
+    // Update active room
+    GridServer.activeRoom = roomId;
+
+    // Clear current LED display
+    try {
+      await wled.clearAll();
+    } catch (err) {
+      console.error('Failed to clear WLED when switching rooms:', err);
+    }
+
+    // Set new room state and mark all cells as dirty for LED sync
+    const server = GridServer.serverInstances.get(roomId);
+    if (server) {
+      server.gridState = [...newRoomState];
+      for (let i = 0; i < TOTAL_CELLS; i++) {
+        server.dirtyIndices.add(i);
+      }
+      // Trigger LED update
+      server.updateLED();
+    }
+
+    return true;
+  }
+
+  // Get all available rooms with their stats
+  static getRoomsInfo(): Array<{ id: string; connections: number; isActive: boolean }> {
+    const rooms: Array<{ id: string; connections: number; isActive: boolean }> = [];
+
+    for (const [roomId, connections] of GridServer.roomConnections) {
+      rooms.push({
+        id: roomId,
+        connections: connections.size,
+        isActive: roomId === GridServer.activeRoom
+      });
+    }
+
+    return rooms.sort((a, b) => {
+      if (a.isActive) return -1;
+      if (b.isActive) return 1;
+      return b.connections - a.connections;
+    });
   }
 
   private broadcastUserCount() {
@@ -36,6 +101,21 @@ export class GridServer extends Server {
   async onStart() {
     try {
       console.log('Starting WLED sync loop');
+
+      // Get room ID from the server name
+      const roomId = this.name || "default";
+      console.log(`GridServer starting for room: ${roomId}`);
+
+      // Store this server instance for room switching
+      GridServer.serverInstances.set(roomId, this);
+      console.log(`Registered server instance for room: ${roomId}`);
+
+      // Initialize room tracking
+      if (!GridServer.roomConnections.has(roomId)) {
+        GridServer.roomConnections.set(roomId, new Set());
+        console.log(`Initialized room connections tracking for: ${roomId}`);
+      }
+
       // Load grid state from storage on startup
       const savedState = await this.ctx.storage.get<{ color: string | undefined }[]>("gridState");
       if (savedState) {
@@ -43,7 +123,14 @@ export class GridServer extends Server {
         this.gridState = savedState.map(cell => ({
           color: cell?.color ?? undefined
         }));
+        console.log(`Loaded saved state for room: ${roomId}`);
+      } else {
+        console.log(`No saved state found for room: ${roomId}, using empty grid`);
       }
+
+      // Store this room's state
+      GridServer.roomStates.set(roomId, [...this.gridState]);
+      console.log(`Stored room state for: ${roomId}`);
 
       // Mark all cells dirty for initial sync; the sync loop will trickle these out.
       for (let i = 0; i < TOTAL_CELLS; i++) this.dirtyIndices.add(i);
@@ -57,24 +144,67 @@ export class GridServer extends Server {
     }
   }
 
-
   async onRequest(req: Request) {
     const url = new URL(req.url);
+
+    // Admin endpoints
+    if (url.pathname.endsWith('/admin/rooms')) {
+      console.log('Admin request: /admin/rooms');
+      const roomsInfo = GridServer.getRoomsInfo();
+      console.log('Rooms info:', roomsInfo);
+      return json({
+        type: 'roomsInfo',
+        rooms: roomsInfo,
+        activeRoom: GridServer.getActiveRoom()
+      });
+    }
+
+    if (url.pathname.endsWith('/admin/switch-room')) {
+      const roomId = url.searchParams.get('room');
+      console.log(`Admin request: /admin/switch-room?room=${roomId}`);
+
+      if (!roomId) {
+        console.log('No room ID provided');
+        return json({ error: 'Room ID required' });
+      }
+
+      const success = await GridServer.setActiveRoom(roomId);
+      console.log(`Room switch result: ${success ? 'success' : 'failed'}`);
+
+      return json({
+        success,
+        activeRoom: GridServer.getActiveRoom(),
+        message: success ? `Switched to room: ${roomId}` : `Failed to switch to room: ${roomId}`
+      });
+    }
+
     // Return current grid state for regular requests
     return json({ type: 'fullState', state: this.gridState });
   }
 
   onConnect(conn: Connection) {
+    // Track connection for this room
+    const roomId = this.name || "default";
+    const roomConnections = GridServer.roomConnections.get(roomId);
+    if (roomConnections) {
+      roomConnections.add(conn.id);
+    }
+
     // Send current grid state to new connection
     conn.send(JSON.stringify({ type: 'fullState', state: this.gridState }));
 
     // Broadcast updated user count
     this.broadcastUserCount();
-
   }
 
   onClose(conn: Connection) {
-    // console.log(`[Disconnected]`, conn.id);
+    // Remove connection tracking
+    const roomId = this.name || "default";
+    const roomConnections = GridServer.roomConnections.get(roomId);
+    if (roomConnections) {
+      roomConnections.delete(conn.id);
+    }
+
     // Broadcast updated user count
     this.broadcastUserCount();
   }
@@ -96,6 +226,10 @@ export class GridServer extends Server {
         // Mark index as dirty for WLED sync loop
         this.dirtyIndices.add(index);
 
+        // Update room state
+        const roomId = this.name || "default";
+        GridServer.roomStates.set(roomId, [...this.gridState]);
+
         // Broadcast the update to all clients
         this.broadcast(JSON.stringify({
           type: 'gridUpdate',
@@ -109,6 +243,10 @@ export class GridServer extends Server {
         } else if (data.type === 'clear') {
         // Clear the entire grid
         this.gridState = this.createEmptyGrid();
+
+        // Update room state
+        const roomId = this.name || "default";
+        GridServer.roomStates.set(roomId, [...this.gridState]);
 
         // Broadcast the cleared state to all clients
         this.broadcast(JSON.stringify({
@@ -131,8 +269,15 @@ export class GridServer extends Server {
     }
   }
 
-
   private updateLED() {
+    // Only update LED if this room is currently active
+    const roomId = this.name || "default";
+    if (roomId !== GridServer.activeRoom) {
+      // Schedule next check
+      setTimeout(this.updateLED.bind(this), 1000);
+      return;
+    }
+
     const retryMs = wled.useWebSocket ? 1 : 1000;
     const retryFn = setTimeout.bind(null, this.updateLED.bind(this), retryMs);
 
@@ -158,7 +303,7 @@ export class GridServer extends Server {
     };
 
     // const start = Date.now();
-    console.log(`Sending ${updates.length} updates to WLED`);
+    // console.log(`Sending ${updates.length} updates to WLED`);
     wled.sendPixels(updates).then(() => {
       // console.log('WLED Fetch done in ', Math.round((Date.now() - start)), 'ms');
       retryFn();
