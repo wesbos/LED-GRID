@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { GRID_WIDTH, GRID_HEIGHT } from '../constants';
+import { GRID_WIDTH, GRID_HEIGHT, WLED_CONFIG } from '../constants';
+import type { WledStateUpdate, WledSegment } from '../types';
 
 export type Rgb = {
   r: number;
@@ -145,10 +146,13 @@ export class WledGridClient {
   private readonly webSocketPath: string;
 
   // WebSocket connection (optional, controlled by options)
-  private ws: any | null = null;
+  private ws: WebSocket | null = null;
   private wsOpen = false;
   private wsReadyPromise: Promise<void> | null = null;
   private wsMessageQueue: string[] = [];
+  private wsReconnectAttempts = 0;
+  private readonly maxReconnectAttempts = 3;
+  private wsReconnectTimer: NodeJS.Timeout | null = null;
 
   // Flushing logic removed; this library only sends immediate calls
 
@@ -183,7 +187,7 @@ export class WledGridClient {
     const start = Math.max(0, Math.min(startIndexInclusive, this.gridWidth * this.gridHeight));
     const stop = Math.max(start, Math.min(stopIndexExclusive, this.gridWidth * this.gridHeight));
     const hex = normalizeHex(color);
-    const body: any = {
+    const body: WledStateUpdate = {
       on: this.powerOnOnWrite,
       seg: [{ id: this.segmentId, i: [start, stop, hex] }],
       v: false,
@@ -217,8 +221,8 @@ export class WledGridClient {
     }
     if (iArray.length === 0) return;
 
-    const seg: any = { id: this.segmentId, i: iArray };
-    const bodyData: any = {
+    const seg: WledSegment = { id: this.segmentId, i: iArray };
+    const bodyData: WledStateUpdate = {
       on: powerOn,
       seg: [seg],
       // Verbose response
@@ -228,13 +232,9 @@ export class WledGridClient {
 
     // Determine transport and its size limit
     const pixelCountTotal = iArray.length / 2;
-    const forceHttpForLargeBatch = pixelCountTotal > 300;
+    const forceHttpForLargeBatch = pixelCountTotal > WLED_CONFIG.LARGE_BATCH_PIXEL_THRESHOLD;
     const willUseWS = forceHttpForLargeBatch ? false : await this.ensureWebSocket();
-    const WEBSOCKET_LIMIT = 1400;
-    // It seems 2000 is a good limit
-    const HTTP_LIMIT = 5000;
-    const HTTP_WAIT_MS = 2;
-    const limit = willUseWS ? WEBSOCKET_LIMIT : HTTP_LIMIT;
+    const limit = willUseWS ? WLED_CONFIG.WEBSOCKET_BYTE_LIMIT : WLED_CONFIG.HTTP_BYTE_LIMIT;
 
     // Chunk the i-array so each JSON payload stays under the limit
     let startIndex = 0;
@@ -249,7 +249,7 @@ export class WledGridClient {
         // grow by one pair [index, hex]
         endIndex += 2;
         const iSub = iArray.slice(startIndex, endIndex);
-        const bodySub: any = {
+        const bodySub: WledStateUpdate = {
           on: powerOn,
           seg: [{ id: this.segmentId, i: iSub }],
           v: false,
@@ -270,7 +270,7 @@ export class WledGridClient {
       if (lastGoodEnd === startIndex) {
         // force at least one pair per chunk
         const iSub = iArray.slice(startIndex, startIndex + 2);
-        const bodySub: any = {
+        const bodySub: WledStateUpdate = {
           on: powerOn,
           seg: [{ id: this.segmentId, i: iSub }],
           v: false,
@@ -288,13 +288,13 @@ export class WledGridClient {
       if (willUseWS) {
         this.sendOverWebSocket(lastGoodPayload);
         // Wait a bit to avoid overwhelming the server. Delay increases with chunk number
-        await new Promise((resolve) => setTimeout(resolve, chunkNumber * 20));
+        await new Promise((resolve) => setTimeout(resolve, chunkNumber * WLED_CONFIG.WEBSOCKET_CHUNK_BASE_DELAY_MS));
       } else {
         const url = `${this.baseUrl}/json`;
         const start = Date.now();
         const response = await postJson(url, JSON.parse(lastGoodPayload));
-        // add a 100ms delay to avoid overwhelming the server
-        await new Promise((resolve) => setTimeout(resolve, HTTP_WAIT_MS));
+        // add a delay to avoid overwhelming the server
+        await new Promise((resolve) => setTimeout(resolve, WLED_CONFIG.HTTP_CHUNK_DELAY_MS));
         if (!response.ok) {
           console.error(`[WLED] HTTP chunk failed`, response.status, response.statusText);
         }
@@ -349,12 +349,17 @@ export class WledGridClient {
             // console.log(`[WS] MESSAGE`, data);
           }
         };
-        ws.onclose = () => {
-          console.log(`[WS] CLOSED`);
+        ws.onclose = (event: CloseEvent) => {
+          console.log(`[WS] CLOSED`, { code: event.code, reason: event.reason, wasClean: event.wasClean });
           this.wsOpen = false;
           this.wsReadyPromise = null;
+
+          // Attempt reconnection if not a clean close and we haven't exceeded max attempts
+          if (!event.wasClean && this.wsReconnectAttempts < this.maxReconnectAttempts) {
+            this.scheduleReconnect();
+          }
         };
-        ws.onerror = (err: unknown) => {
+        ws.onerror = (err: Event) => {
           console.log(`[WS] ERROR`, err);
           this.wsOpen = false;
           this.wsReadyPromise = null;
@@ -376,6 +381,41 @@ export class WledGridClient {
     }
   }
 
+  private scheduleReconnect(): void {
+    if (this.wsReconnectTimer) {
+      clearTimeout(this.wsReconnectTimer);
+    }
+
+    this.wsReconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, this.wsReconnectAttempts - 1), 10000); // Exponential backoff, max 10s
+
+    console.log(`[WS] Scheduling reconnect attempt ${this.wsReconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+
+    this.wsReconnectTimer = setTimeout(() => {
+      this.wsReconnectTimer = null;
+      this.ensureWebSocket().catch(err => {
+        console.error('[WS] Reconnection failed:', err);
+      });
+    }, delay);
+  }
+
+  public disconnect(): void {
+    if (this.wsReconnectTimer) {
+      clearTimeout(this.wsReconnectTimer);
+      this.wsReconnectTimer = null;
+    }
+
+    if (this.ws) {
+      this.ws.close(1000, 'Client disconnect');
+      this.ws = null;
+    }
+
+    this.wsOpen = false;
+    this.wsReadyPromise = null;
+    this.wsReconnectAttempts = 0;
+    this.wsMessageQueue = [];
+  }
+
   private sendOverWebSocket(message: string): void {
     if (!this.ws || !this.wsOpen) {
       this.wsMessageQueue.push(message);
@@ -383,7 +423,10 @@ export class WledGridClient {
     }
     try {
       this.ws.send(message);
-    } catch {
+      // Reset reconnect attempts on successful send
+      this.wsReconnectAttempts = 0;
+    } catch (error) {
+      console.warn('[WS] Failed to send message, queuing:', error);
       this.wsMessageQueue.push(message);
     }
   }

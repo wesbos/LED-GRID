@@ -6,18 +6,26 @@
     "backend": "wrangler dev",
     "frontend": "vite",
     "dev": "npm-run-all --parallel backend frontend",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "lodash": "^4.17.21",
     "partyserver": "^0.0.72",
     "partysocket": "1.1.5",
-    "zod": "^4.0.17"
+    "zod": "^4.0.17",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/lodash": "^4.17.20",
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.2",
-    "wrangler": "^4.29.0"
+    "wrangler": "^4.29.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.8"
   }
 }

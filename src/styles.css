@@ -184,12 +184,30 @@ h6 {
   transition: all 0.2s ease;
   padding: 0.25rem;
   border-radius: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 
 .admin-link:hover {
   color: var(--accent);
   background: var(--gray-200);
   transform: scale(1.1);
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  margin: 0;
+}
+
+.link-button:hover {
+  color: var(--accent-light);
 }
 
 .color-picker {
@@ -415,6 +433,49 @@ footer {
   100% {
     background-position: 200% 0;
   }
+}
+
+/* Error Boundary Styles */
+.error-boundary {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 2rem;
+  border: 2px solid #ff4444;
+  border-radius: 12px;
+  background: #fff5f5;
+  text-align: center;
+}
+
+.error-boundary h2 {
+  color: #cc0000;
+  margin-bottom: 1rem;
+}
+
+.error-boundary details {
+  margin: 1rem 0;
+  text-align: left;
+}
+
+.error-boundary pre {
+  background: #f5f5f5;
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+}
+
+.error-boundary button {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.error-boundary button:hover {
+  background: #0056b3;
 }
 
 @media (max-width: 640px) {

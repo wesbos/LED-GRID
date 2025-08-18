@@ -3,45 +3,73 @@ import z from "zod";
 export const SLOW_DOWN_SENTINEL = "slowdown";
 export const GO_AWAY_SENTINEL = "goaway";
 
-const allowedReactions = ["clap", "heart", "thumbsup", "party"] as const;
-const allowedReactionsSchema = z.enum(allowedReactions);
+// Grid cell state
+export interface GridCell {
+  color: string | undefined;
+}
 
-// client sends a message either via WebSocket or HTTP
-// { type: "reaction", kind: "clap" }
-const ReactionSchema = z.object({
-  type: z.literal("reaction"),
-  kind: allowedReactionsSchema,
-});
+// Client-to-server message types
+export interface DrawMessage {
+  type: 'draw';
+  x: number;
+  y: number;
+  color: string;
+}
 
-// server responds with an updated count of reactions
-// { type: "update", reactions: { clap: 1, heart: 2 } }
-const ReactionUpdateSchema = z.object({
-  type: z.literal("update"),
-  reactions: z.record(z.number()),
-});
+export interface ClearMessage {
+  type: 'clear';
+}
 
-export const parseReactionMessage = (message: string) => {
-  return ReactionSchema.parse(JSON.parse(message));
-};
+export type ClientMessage = DrawMessage | ClearMessage;
 
-export const createReactionMessage = (kind: string) => {
-  return JSON.stringify(
-    ReactionSchema.parse({
-      type: "reaction",
-      kind,
-    })
-  );
-};
+// Server-to-client message types
+export interface GridUpdateMessage {
+  type: 'gridUpdate';
+  index: number;
+  color: string;
+}
 
-export const parseUpdateMessage = (message: string) => {
-  return ReactionUpdateSchema.parse(JSON.parse(message));
-};
+export interface FullStateMessage {
+  type: 'fullState';
+  state: GridCell[];
+}
 
-export const createUpdateMessage = (reactions: Record<string, number>) => {
-  return JSON.stringify(
-    ReactionUpdateSchema.parse({
-      type: "update",
-      reactions,
-    })
-  );
-};
+export interface UserCountMessage {
+  type: 'userCount';
+  count: number;
+}
+
+export type ServerMessage = GridUpdateMessage | FullStateMessage | UserCountMessage;
+
+// WLED-specific types
+export interface WledSegment {
+  id: number;
+  i: Array<number | string>; // [index, hex, index, hex, ...] or [start, stop, hex, ...]
+}
+
+export interface WledStateUpdate {
+  on?: boolean;
+  bri?: number;
+  tt?: number;
+  v?: boolean;
+  seg?: WledSegment[];
+}
+
+// Admin API types
+export interface RoomInfo {
+  id: string;
+  connections: number;
+  isActive: boolean;
+}
+
+export interface RoomsInfoResponse {
+  type: 'roomsInfo';
+  rooms: RoomInfo[];
+  activeRoom: string;
+}
+
+export interface SwitchRoomResponse {
+  success: boolean;
+  activeRoom: string;
+  message: string;
+}

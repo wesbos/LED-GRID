@@ -1,11 +1,12 @@
 // import type * as Party from "partykit/server";
 import { routePartykitRequest, Server, type Connection, } from "partyserver";
 import { rateLimit } from "./limiter";
-import { GRID_WIDTH, GRID_HEIGHT, TOTAL_CELLS } from "./constants";
+import { GRID_WIDTH, GRID_HEIGHT, TOTAL_CELLS, WLED_CONFIG } from "./constants";
 import { wled } from "./wled/wled";
 import { toHex } from "./utils";
+import type { GridCell, ClientMessage, ServerMessage, RoomInfo, RoomsInfoResponse, SwitchRoomResponse } from "./types";
 
-const json = (response: any) =>
+const json = (response: unknown) =>
   new Response(JSON.stringify(response), {
     headers: {
       "Content-Type": "application/json",
@@ -17,11 +18,11 @@ export class GridServer extends Server {
   private dirtyIndices: Set<number> = new Set();
 
   // Initialize grid with all cells undefined
-  gridState: { color: string | undefined }[] = this.createEmptyGrid();
+  gridState: GridCell[] = this.createEmptyGrid();
 
   // Room management - static properties to track across instances
   private static activeRoom: string = "default";
-  private static roomStates: Map<string, { color: string | undefined }[]> = new Map();
+  private static roomStates: Map<string, GridCell[]> = new Map();
   private static roomConnections: Map<string, Set<string>> = new Map();
   private static serverInstances: Map<string, GridServer> = new Map();
 
@@ -71,8 +72,8 @@ export class GridServer extends Server {
   }
 
   // Get all available rooms with their stats
-  static getRoomsInfo(): Array<{ id: string; connections: number; isActive: boolean }> {
-    const rooms: Array<{ id: string; connections: number; isActive: boolean }> = [];
+  static getRoomsInfo(): RoomInfo[] {
+    const rooms: RoomInfo[] = [];
 
     for (const [roomId, connections] of GridServer.roomConnections) {
       rooms.push({
@@ -123,7 +124,8 @@ export class GridServer extends Server {
         this.gridState = savedState.map(cell => ({
           color: cell?.color ?? undefined
         }));
-        console.log(`Loaded saved state for room: ${roomId}`);
+        const coloredCells = this.gridState.filter(cell => cell.color).length;
+        console.log(`Loaded saved state for room: ${roomId} (${coloredCells} colored cells)`);
       } else {
         console.log(`No saved state found for room: ${roomId}, using empty grid`);
       }
@@ -191,7 +193,10 @@ export class GridServer extends Server {
     }
 
     // Send current grid state to new connection
-    conn.send(JSON.stringify({ type: 'fullState', state: this.gridState }));
+    const initialState = { type: 'fullState', state: this.gridState };
+    const coloredCells = this.gridState.filter(cell => cell.color).length;
+    console.log(`[Server] New connection ${conn.id} to room ${roomId}, sending ${coloredCells} colored cells`);
+    conn.send(JSON.stringify(initialState));
 
     // Broadcast updated user count
     this.broadcastUserCount();
@@ -278,7 +283,7 @@ export class GridServer extends Server {
       return;
     }
 
-    const retryMs = wled.useWebSocket ? 1 : 1000;
+    const retryMs = wled.useWebSocket ? WLED_CONFIG.LED_UPDATE_RETRY_MS_WEBSOCKET : WLED_CONFIG.LED_UPDATE_RETRY_MS_HTTP;
     const retryFn = setTimeout.bind(null, this.updateLED.bind(this), retryMs);
 
     if (this.dirtyIndices.size === 0) {

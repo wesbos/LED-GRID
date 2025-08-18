@@ -1,4 +1,4 @@
-import type { Connection } from "partykit/server";
+import type { Connection } from "partyserver";
 import { GO_AWAY_SENTINEL, SLOW_DOWN_SENTINEL } from "./types";
 
 type RateLimiter = { nextAllowedTime?: number; violations: number };
