@@ -559,6 +559,31 @@ button:not(.preset-btn):not(.cell):active {
     0 4px 6px -1px rgba(15, 23, 42, 0.1);
 }
 
+/* Auth Status Styles */
+.auth-status {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 1rem;
+  margin: 1rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.auth-status.authorized {
+  border-color: #22c55e;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.auth-status.unauthorized {
+  border-color: #ef4444;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
 /* Utility Panel Styles */
 .utility-panel {
   background: var(--bg-elevated);

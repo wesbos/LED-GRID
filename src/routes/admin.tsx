@@ -2,6 +2,7 @@ import React from 'react';
 import { useState, useEffect } from 'react';
 import type { RoomInfo, RoomsInfoResponse, SwitchRoomResponse } from '../types';
 import { UtilityPanel } from '../components/UtilityPanel';
+import { AuthStatus } from '../components/AuthStatus';
 
 export function AdminComponent() {
   const [rooms, setRooms] = useState<RoomInfo[]>([]);
@@ -118,7 +119,8 @@ export function AdminComponent() {
         <h1>🚦 LED Grid Admin</h1>
         <p>Manage which room is currently displayed on the LED hardware</p>
       </div>
-      <p>hi</p>
+
+      <AuthStatus />
 
       <UtilityPanel roomId={activeRoom} />
 

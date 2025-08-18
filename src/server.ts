@@ -9,6 +9,7 @@ import { UtilityManager } from "./utilities/UtilityManager";
 import { SocialStatsUtility } from "./utilities/SocialStatsUtility";
 import { GitHubUtility } from "./utilities/GithubUtility";
 import { BuildStatusUtility } from "./utilities/BuildStatusUtility";
+import { isAdminAuthorized, createUnauthorizedResponse } from "./auth";
 
 const json = (response: unknown) =>
   new Response(JSON.stringify(response), {
@@ -186,8 +187,12 @@ export class GridServer extends Server {
   async onRequest(req: Request) {
     const url = new URL(req.url);
 
-    // Admin endpoints
+    // Admin endpoints (protected)
     if (url.pathname.endsWith('/admin/rooms')) {
+      if (!isAdminAuthorized(req)) {
+        return createUnauthorizedResponse();
+      }
+
       console.log('Admin request: /admin/rooms');
       const roomsInfo = GridServer.getRoomsInfo();
       console.log('Rooms info:', roomsInfo);
@@ -199,6 +204,10 @@ export class GridServer extends Server {
     }
 
     if (url.pathname.endsWith('/admin/switch-room')) {
+      if (!isAdminAuthorized(req)) {
+        return createUnauthorizedResponse();
+      }
+
       const roomId = url.searchParams.get('room');
       console.log(`Admin request: /admin/switch-room?room=${roomId}`);
 
@@ -217,8 +226,12 @@ export class GridServer extends Server {
       });
     }
 
-    // Utility endpoints
+    // Utility endpoints (protected)
     if (url.pathname.endsWith('/utilities/list')) {
+      if (!isAdminAuthorized(req)) {
+        return createUnauthorizedResponse();
+      }
+
       const utilities = this.utilityManager.getAvailableUtilities();
       return json({
         type: 'utilitiesList',
@@ -228,6 +241,10 @@ export class GridServer extends Server {
     }
 
     if (url.pathname.endsWith('/utilities/execute')) {
+      if (!isAdminAuthorized(req)) {
+        return createUnauthorizedResponse();
+      }
+
       const utilityId = url.searchParams.get('utility');
       if (!utilityId) {
         return json({ error: 'Utility ID required' });
@@ -238,6 +255,10 @@ export class GridServer extends Server {
     }
 
     if (url.pathname.endsWith('/utilities/stop')) {
+      if (!isAdminAuthorized(req)) {
+        return createUnauthorizedResponse();
+      }
+
       this.utilityManager.stopActiveUtility();
       return json({ success: true, message: 'Stopped active utility' });
     }

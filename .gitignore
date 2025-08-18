@@ -169,3 +169,4 @@ dist
 
 .partykit
 .DS_Store
+.env

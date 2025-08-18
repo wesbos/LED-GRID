@@ -2,6 +2,10 @@
   "name": "wled-grid",
   "main": "src/server.ts",
   "compatibility_date": "2025-05-08",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
   "durable_objects": {
     "bindings": [
       {
