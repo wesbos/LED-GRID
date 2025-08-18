@@ -5,6 +5,10 @@ import { GRID_WIDTH, GRID_HEIGHT, TOTAL_CELLS, WLED_CONFIG } from "./constants";
 import { wled } from "./wled/wled";
 import { toHex } from "./utils";
 import type { GridCell, ClientMessage, ServerMessage, RoomInfo, RoomsInfoResponse, SwitchRoomResponse } from "./types";
+import { UtilityManager } from "./utilities/UtilityManager";
+import { SocialStatsUtility } from "./utilities/SocialStatsUtility";
+import { GitHubUtility } from "./utilities/GithubUtility";
+import { BuildStatusUtility } from "./utilities/BuildStatusUtility";
 
 const json = (response: unknown) =>
   new Response(JSON.stringify(response), {
@@ -16,6 +20,7 @@ const json = (response: unknown) =>
 export class GridServer extends Server {
   static options = { hibernate: true };
   private dirtyIndices: Set<number> = new Set();
+  private utilityManager: UtilityManager = new UtilityManager();
 
   // Initialize grid with all cells undefined
   gridState: GridCell[] = this.createEmptyGrid();
@@ -28,6 +33,35 @@ export class GridServer extends Server {
 
   private createEmptyGrid() {
     return new Array(TOTAL_CELLS).fill(null).map(() => ({ color: undefined }));
+  }
+
+  private setupUtilities() {
+    // Register all available utilities
+    this.utilityManager.registerUtility(new SocialStatsUtility());
+    this.utilityManager.registerUtility(new GitHubUtility('wesbos')); // Pass username
+    this.utilityManager.registerUtility(new BuildStatusUtility());
+
+    // Set up callback to update grid when utility runs
+    this.utilityManager.setGridUpdateCallback((gridData, metadata) => {
+      // Update our grid state
+      this.gridState = [...gridData];
+
+      // Mark all cells as dirty for LED sync
+      for (let i = 0; i < TOTAL_CELLS; i++) {
+        this.dirtyIndices.add(i);
+      }
+
+      // Broadcast to all connected clients
+      this.broadcast(JSON.stringify({
+        type: 'fullState',
+        state: this.gridState
+      }));
+
+      // Save state
+      this.ctx.storage.put("gridState", this.gridState);
+
+      console.log(`[UtilityManager] Updated grid with utility data`, { metadata });
+    });
   }
 
   // Get the current active room
@@ -107,6 +141,9 @@ export class GridServer extends Server {
       const roomId = this.name || "default";
       console.log(`GridServer starting for room: ${roomId}`);
 
+      // Initialize utilities
+      this.setupUtilities();
+
       // Store this server instance for room switching
       GridServer.serverInstances.set(roomId, this);
       console.log(`Registered server instance for room: ${roomId}`);
@@ -178,6 +215,31 @@ export class GridServer extends Server {
         activeRoom: GridServer.getActiveRoom(),
         message: success ? `Switched to room: ${roomId}` : `Failed to switch to room: ${roomId}`
       });
+    }
+
+    // Utility endpoints
+    if (url.pathname.endsWith('/utilities/list')) {
+      const utilities = this.utilityManager.getAvailableUtilities();
+      return json({
+        type: 'utilitiesList',
+        utilities,
+        activeUtility: this.utilityManager.getActiveUtility()
+      });
+    }
+
+    if (url.pathname.endsWith('/utilities/execute')) {
+      const utilityId = url.searchParams.get('utility');
+      if (!utilityId) {
+        return json({ error: 'Utility ID required' });
+      }
+
+      const result = await this.utilityManager.executeUtility(utilityId);
+      return json(result);
+    }
+
+    if (url.pathname.endsWith('/utilities/stop')) {
+      this.utilityManager.stopActiveUtility();
+      return json({ success: true, message: 'Stopped active utility' });
     }
 
     // Return current grid state for regular requests
@@ -268,6 +330,20 @@ export class GridServer extends Server {
         } catch (err) {
           console.error('Failed to clear WLED:', err);
         }
+        } else if (data.type === 'executeUtility' && typeof data.utilityId === 'string') {
+          const result = await this.utilityManager.executeUtility(data.utilityId);
+          // Send result back to the client
+          connection.send(JSON.stringify({
+            type: 'utilityResult',
+            ...result
+          }));
+        } else if (data.type === 'stopUtility') {
+          this.utilityManager.stopActiveUtility();
+          connection.send(JSON.stringify({
+            type: 'utilityResult',
+            success: true,
+            message: 'Utility stopped'
+          }));
       }
     } catch (err) {
       console.error('Failed to parse message:', err);

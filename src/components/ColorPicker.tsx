@@ -6,19 +6,19 @@ interface ColorPickerProps {
 }
 
 const PRESET_COLORS = [
-  { color: '#FF0080', title: 'Hot Pink' },
-  { color: '#0070F3', title: 'Blue' },
-  { color: '#50E3C2', title: 'Cyan' },
-  { color: '#7928CA', title: 'Purple' },
-  { color: '#F5A623', title: 'Orange' },
-  { color: '#79FFE1', title: 'Mint' },
+  { color: '#3B82F6', title: 'Blue' },
+  { color: '#1D4ED8', title: 'Deep Blue' },
+  { color: '#06B6D4', title: 'Cyan' },
+  { color: '#10B981', title: 'Emerald' },
+  { color: '#F59E0B', title: 'Amber' },
+  { color: '#EF4444', title: 'Red' },
   { color: '#FFFFFF', title: 'White' },
-  { color: '#000000', title: 'Black' },
+  { color: '#1E293B', title: 'Dark Navy' },
 ];
 
-// Get a random color that's not white or black for better visibility
+// Get a random color that's not white or dark navy for better visibility
 export function getRandomColor(): string {
-  const colorfulColors = PRESET_COLORS.filter(c => c.color !== '#FFFFFF' && c.color !== '#000000');
+  const colorfulColors = PRESET_COLORS.filter(c => c.color !== '#FFFFFF' && c.color !== '#1E293B');
   const randomIndex = Math.floor(Math.random() * colorfulColors.length);
   return colorfulColors[randomIndex].color;
 }

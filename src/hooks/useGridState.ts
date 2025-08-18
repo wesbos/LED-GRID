@@ -17,24 +17,37 @@ export function useGridState() {
 
 	// Function to update a single cell
 	const updateCell = useCallback((index: number, color: string | undefined) => {
-		if (!socketRef.current) {
-			console.warn('[GridState] updateCell called but no socket is set');
+		if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+			console.warn('[GridState] updateCell called but socket is not ready', {
+				hasSocket: !!socketRef.current,
+				readyState: socketRef.current?.readyState
+			});
 			return;
 		}
 
 		const x = index % GRID_WIDTH;
 		const y = Math.floor(index / GRID_WIDTH);
 		const payload = { type: 'draw', x, y, color } as const;
-		socketRef.current.send(JSON.stringify(payload));
+
+		try {
+			socketRef.current.send(JSON.stringify(payload));
+		} catch (error) {
+			console.error('[GridState] Failed to send draw message:', error);
+		}
 	}, []);
 
 	// Function to clear the grid
 	const clearGrid = useCallback(() => {
-		if (!socketRef.current) {
-			console.warn('[GridState] clearGrid called but no socket is set');
+		if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+			console.warn('[GridState] clearGrid called but socket is not ready');
 			return;
 		}
-		socketRef.current.send(JSON.stringify({ type: 'clear' }));
+
+		try {
+			socketRef.current.send(JSON.stringify({ type: 'clear' }));
+		} catch (error) {
+			console.error('[GridState] Failed to send clear message:', error);
+		}
 	}, []);
 
 	// Function to set the socket reference
@@ -43,9 +56,9 @@ export function useGridState() {
 		// Socket reference updated
 	}, []);
 
-	// Function to handle incoming messages
+		// Function to handle incoming messages - stable reference
 	const handleMessage = useCallback((data: unknown) => {
-				try {
+		try {
 			// Type guard to ensure data is a valid server message
 			if (!data || typeof data !== 'object' || !('type' in data)) {
 				console.warn('[GridState] Invalid message format', data);

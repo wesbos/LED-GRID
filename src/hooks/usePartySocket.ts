@@ -3,6 +3,9 @@ import PartySocket from 'partysocket';
 
 const PARTYKIT_HOST: string = `${window.location.origin}/party`;
 
+// Global socket cache to persist across hot reloads
+const socketCache = new Map<string, PartySocket>();
+
 export function usePartySocket(roomId: string) {
 	const [isConnected, setIsConnected] = useState(false);
 	const socketRef = useRef<PartySocket | null>(null);
@@ -14,18 +17,24 @@ export function usePartySocket(roomId: string) {
 		if (room.endsWith('/')) room = room.slice(0, -1);
 		const finalRoomId = room.split('/').join('-') || 'default';
 
-		// Setting up PartySocket connection
+		// Try to reuse existing socket for this room to survive hot reloads
+		let socket = socketCache.get(finalRoomId);
 
-		// Create socket but don't connect yet
-		const socket = new PartySocket({
-			host: PARTYKIT_HOST,
-			party: 'grid-server',
-			room: finalRoomId,
-			// Don't auto-connect - we'll do it manually after setting up listeners
-			startClosed: true,
-		});
+		if (!socket || socket.readyState === WebSocket.CLOSED) {
+			// Create new socket if none exists or if closed
+			socket = new PartySocket({
+				host: PARTYKIT_HOST,
+				party: 'grid-server',
+				room: finalRoomId,
+				startClosed: true,
+			});
+			socketCache.set(finalRoomId, socket);
+		}
 
 		socketRef.current = socket;
+
+		// Update connection state based on current socket state
+		setIsConnected(socket.readyState === WebSocket.OPEN);
 
 		const handleOpen = () => {
 			setIsConnected(true);
@@ -61,22 +70,30 @@ export function usePartySocket(roomId: string) {
 			}
 		};
 
-		// Set up all event listeners BEFORE opening the connection
+		// Remove any existing listeners to avoid duplicates
+		socket.removeEventListener('open', handleOpen);
+		socket.removeEventListener('close', handleClose);
+		socket.removeEventListener('error', handleError);
+		socket.removeEventListener('message', handleMessage);
+
+		// Set up all event listeners
 		socket.addEventListener('open', handleOpen);
 		socket.addEventListener('close', handleClose);
 		socket.addEventListener('error', handleError);
 		socket.addEventListener('message', handleMessage);
 
-		// Now open the connection after listeners are set up
-		socket.reconnect();
+		// Open connection if not already open
+		if (socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+			socket.reconnect();
+		}
 
 		return () => {
+			// Don't close the socket on cleanup - let it persist for hot reloads
+			// Just remove our specific listeners
 			socket.removeEventListener('open', handleOpen);
 			socket.removeEventListener('close', handleClose);
 			socket.removeEventListener('error', handleError);
 			socket.removeEventListener('message', handleMessage);
-			socket.close();
-			socketRef.current = null;
 		};
 	}, [roomId]);
 

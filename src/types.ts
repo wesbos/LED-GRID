@@ -73,3 +73,32 @@ export interface SwitchRoomResponse {
   activeRoom: string;
   message: string;
 }
+
+// Utility-related types
+export interface UtilityConfig {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  refreshIntervalMs?: number;
+}
+
+export interface UtilitiesListResponse {
+  type: 'utilitiesList';
+  utilities: UtilityConfig[];
+  activeUtility: string | null;
+}
+
+export interface UtilityExecuteMessage {
+  type: 'executeUtility';
+  utilityId: string;
+}
+
+export interface UtilityStopMessage {
+  type: 'stopUtility';
+}
+
+export type UtilityMessage = UtilityExecuteMessage | UtilityStopMessage;
+
+// Extend ClientMessage to include utility messages
+export type ClientMessage = DrawMessage | ClearMessage | UtilityMessage;

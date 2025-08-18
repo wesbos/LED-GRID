@@ -5,6 +5,7 @@ import { useGridState } from '../hooks/useGridState';
 import { drawImageToGrid, drawText } from '../utils/drawingUtils';
 import { ColorPicker, getRandomColor } from './ColorPicker';
 import { Grid } from './Grid';
+import { UtilityPanel } from './UtilityPanel';
 
 interface GridEditorProps {
 	roomId?: string; // undefined for default room, string for specific rooms
@@ -20,14 +21,15 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 	const { gridState, updateCell, clearGrid, userCount, setSocket, handleMessage } = useGridState();
 	const { socket, isConnected, subscribeToMessages } = usePartySocket(roomId);
 
-	// Subscribe to messages from the socket
+	// Subscribe to messages from the socket - stable across hot reloads
 	useEffect(() => {
 		if (!subscribeToMessages) return;
+
 		const unsubscribe = subscribeToMessages(handleMessage);
 		return unsubscribe;
 	}, [subscribeToMessages, handleMessage]);
 
-	// Wire up socket when it becomes available
+	// Wire up socket when it becomes available - ensure it persists across hot reloads
 	useEffect(() => {
 		if (!socket) return;
 		setSocket(socket as unknown as WebSocket);
@@ -169,6 +171,8 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 					onDrop={handleDrop}
 				/>
 
+				<UtilityPanel roomId={roomId} />
+
 				<footer>
 					{showRoomInfo ? (
 						<p className="hint">
@@ -180,7 +184,7 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 							</button> to switch to this room on the LED display.
 						</p>
 					) : (
-						<p className="hint">Drag an image to draw • Type text to display</p>
+						<p className="hint"></p>
 					)}
 				</footer>
 			</main>
