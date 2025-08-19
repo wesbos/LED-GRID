@@ -110,8 +110,7 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 	return (
 		<>
 			<div className={`user-count ${dragActive ? 'drag-active' : ''}`}>
-				<span className="user-count-icon">👥</span>
-				<span>{userCount}</span> collaborators
+				<span>{userCount} others here</span>
 				<button
 					className="admin-link"
 					title="Admin Panel"
