@@ -37,8 +37,8 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 	const gridRef = useRef<HTMLDivElement>(null);
 
 	// Handle drawing with pointer events
-	const handleDrawEvent = useCallback((e: React.PointerEvent) => {
-		if (!isDrawing || !gridRef.current) return;
+	const handleDrawEvent = useCallback((e: React.PointerEvent, forceDrawing = false) => {
+		if ((!isDrawing && !forceDrawing) || !gridRef.current) return;
 
 		const cell = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement;
 		if (!cell?.classList.contains('cell')) return;
@@ -46,18 +46,20 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 		const index = parseInt(cell.dataset.index || '0');
 		if (isNaN(index)) return;
 		updateCell(index, currentColor);
-	}, [isDrawing, currentColor, updateCell, roomId]);
+	}, [isDrawing, currentColor, updateCell]);
 
 	// Pointer event handlers
 	const handlePointerDown = useCallback((e: React.PointerEvent) => {
 		setIsDrawing(true);
 		const target = e.target as HTMLElement;
 		target.setPointerCapture(e.pointerId);
-		handleDrawEvent(e);
+		// Force drawing for initial click to handle single clicks
+		handleDrawEvent(e, true);
 	}, [handleDrawEvent]);
 
 	const handlePointerMove = useCallback((e: React.PointerEvent) => {
-		handleDrawEvent(e);
+		// Only draw during move if we're actively drawing (dragging)
+		handleDrawEvent(e, false);
 	}, [handleDrawEvent]);
 
 	const handlePointerUp = useCallback(() => {

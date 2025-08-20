@@ -72,7 +72,9 @@ export class GitHubUtility extends UtilityBase {
 
       for (const year of yearsToFetch) {
         try {
-          const response = await fetch(`https://github-contributions-api.jogruber.de/v4/${this.username}?y=${year}`);
+          const url = `https://github-contributions-api.jogruber.de/v4/${this.username}?y=${year}`;
+          console.log(`Fetching data for ${url}`);
+          const response = await fetch(url);
 
           if (response.ok) {
             const data: GitHubResponse = await response.json();
@@ -133,11 +135,12 @@ export class GitHubUtility extends UtilityBase {
     // GitHub contribution colors (matching GitHub's actual colors)
     const levelColors = [
       '#161B22', // Level 0 - dark (no contributions)
-      '#0E4429', // Level 1 - light green
+      '#559300', // Level 1 - light green
       '#006D32', // Level 2 - medium green
-      '#26A641', // Level 3 - bright green
-      '#39D353'  // Level 4 - very bright green
+      '#7FDB00', // Level 3 - bright green
+      '#94ff00'  // Level 4 - very bright green
     ];
+
 
         // Display 5 years stacked vertically (most recent first)
     const years = [2025, 2024, 2023, 2022, 2021]; // Most recent first
