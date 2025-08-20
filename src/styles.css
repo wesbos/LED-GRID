@@ -713,4 +713,187 @@ button:not(.preset-btn):not(.cell):active {
   .utility-grid {
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
+
+  .webcam-controls {
+    margin: 12px 0;
+  }
+
+  .webcam-actions {
+    flex-wrap: wrap;
+  }
+
+  .camera-select {
+    min-width: 150px;
+  }
+
+  .webcam-preview-container {
+    min-height: 120px;
+  }
+}
+
+/* Webcam controls styles */
+.webcam-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 8px 0;
+}
+
+.webcam-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.webcam-button,
+.capture-button,
+.live-start-button,
+.live-stop-button {
+  padding: 8px 12px;
+  border: 1px solid var(--border-medium);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.webcam-button:hover,
+.capture-button:hover,
+.live-start-button:hover {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.webcam-button:disabled,
+.capture-button:disabled,
+.live-start-button:disabled,
+.live-stop-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.capture-button {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.capture-button:hover {
+  background: var(--accent-hover);
+}
+
+.live-start-button {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: white;
+}
+
+.live-start-button:hover {
+  background: #b91c1c;
+}
+
+.live-stop-button {
+  background: #7f1d1d;
+  border-color: #7f1d1d;
+  color: white;
+  animation: pulse-red 2s infinite;
+}
+
+.live-stop-button:hover {
+  background: #991b1b;
+}
+
+@keyframes pulse-red {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.live-indicator {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: #dc2626;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-align: center;
+  animation: pulse-indicator 2s infinite;
+}
+
+@keyframes pulse-indicator {
+  0%,
+  100% {
+    background-color: #fef2f2;
+    border-color: #fecaca;
+  }
+  50% {
+    background-color: #fee2e2;
+    border-color: #fca5a5;
+  }
+}
+
+.camera-select {
+  padding: 6px 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  min-width: 200px;
+  cursor: pointer;
+}
+
+.camera-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.camera-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.webcam-preview-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 150px;
+  background: #000;
+  border-radius: 8px;
+  border: 2px solid var(--border-medium);
+  overflow: hidden;
+}
+
+.webcam-preview-container:empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.webcam-preview-container:empty::before {
+  content: "Starting camera...";
+}
+
+/* Webcam preview video styling (applied via JavaScript) */
+.webcam-preview {
+  max-width: 100%;
+  height: auto;
+  object-fit: cover;
+  border-radius: 6px;
 }

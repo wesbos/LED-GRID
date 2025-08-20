@@ -328,6 +328,40 @@ export class GridServer extends Server {
         // Save state to storage (fire and forget)
         this.ctx.storage.put("gridState", this.gridState);
         // No direct WLED flush here; handled by sync loop
+        } else if (data.type === 'batchDraw' && Array.isArray(data.pixels)) {
+        // Handle batch pixel updates for better performance
+        const validPixels = data.pixels.filter(pixel =>
+          typeof pixel.x === 'number' &&
+          typeof pixel.y === 'number' &&
+          typeof pixel.color === 'string' &&
+          pixel.x >= 0 && pixel.x < GRID_WIDTH &&
+          pixel.y >= 0 && pixel.y < GRID_HEIGHT
+        );
+
+        const updates: Array<{ index: number; color: string }> = [];
+
+        // Process all valid pixels
+        for (const pixel of validPixels) {
+          const index = pixel.y * GRID_WIDTH + pixel.x;
+          this.gridState[index] = { color: pixel.color };
+          this.dirtyIndices.add(index);
+          updates.push({ index, color: pixel.color });
+        }
+
+        if (updates.length > 0) {
+          // Update room state
+          const roomId = this.name || "default";
+          GridServer.roomStates.set(roomId, [...this.gridState]);
+
+          // Broadcast all updates in a single message
+          this.broadcast(JSON.stringify({
+            type: 'batchUpdate',
+            updates
+          }));
+
+          // Save state to storage (fire and forget)
+          this.ctx.storage.put("gridState", this.gridState);
+        }
         } else if (data.type === 'clear') {
         // Clear the entire grid
         this.gridState = this.createEmptyGrid();

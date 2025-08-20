@@ -36,6 +36,25 @@ export function useGridState() {
 		}
 	}, []);
 
+	// Function to update multiple cells in a batch for better performance
+	const updateCellsBatch = useCallback((pixels: Array<{ x: number; y: number; color: string }>) => {
+		if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+			console.warn('[GridState] updateCellsBatch called but socket is not ready');
+			return;
+		}
+
+		if (pixels.length === 0) return;
+
+		const payload = { type: 'batchDraw', pixels } as const;
+
+		try {
+			socketRef.current.send(JSON.stringify(payload));
+			console.log(`[GridState] Sent batch update with ${pixels.length} pixels`);
+		} catch (error) {
+			console.error('[GridState] Failed to send batch draw message:', error);
+		}
+	}, []);
+
 	// Function to clear the grid
 	const clearGrid = useCallback(() => {
 		if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -74,6 +93,19 @@ export function useGridState() {
 				return;
 			}
 
+			if (data.type === 'batchUpdate' && 'updates' in data && Array.isArray(data.updates)) {
+				setGridState((prev: GridCell[]) => {
+					const next = [...prev];
+					for (const update of data.updates as Array<{ index: number; color: string }>) {
+						if (typeof update.index === 'number' && typeof update.color === 'string') {
+							next[update.index] = { color: update.color };
+						}
+					}
+					return next;
+				});
+				return;
+			}
+
 			if (data.type === 'fullState' && 'state' in data) {
 				const state = data.state as Array<GridCell | null>;
 				const next = state.map((cellData) => ({
@@ -100,6 +132,7 @@ export function useGridState() {
 		gridState,
 		userCount,
 		updateCell,
+		updateCellsBatch,
 		clearGrid,
 		setSocket,
 		handleMessage,

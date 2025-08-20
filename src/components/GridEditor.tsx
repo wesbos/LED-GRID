@@ -3,6 +3,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { usePartySocket } from '../hooks/usePartySocket';
 import { useGridState } from '../hooks/useGridState';
 import { drawImageToGrid, drawText } from '../utils/drawingUtils';
+import { drawImageToGridBatch, drawTextBatch } from '../utils/batchDrawingUtils';
+import { captureWebcamToGrid, cleanupWebcam, WebcamCapture, initializeWebcamPreview, getAvailableCameras, startLiveWebcamCapture, stopLiveWebcamCapture, isLiveWebcamCapture, type CameraDevice } from '../utils/webcamUtils';
 import { ColorPicker, getRandomColor } from './ColorPicker';
 import { Grid } from './Grid';
 
@@ -16,6 +18,12 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 	const [isDrawing, setIsDrawing] = useState(false);
 	const [textInput, setTextInput] = useState('');
 	const [dragActive, setDragActive] = useState(false);
+	const [webcamSupported, setWebcamSupported] = useState(false);
+	const [webcamLoading, setWebcamLoading] = useState(false);
+	const [availableCameras, setAvailableCameras] = useState<CameraDevice[]>([]);
+	const [selectedCamera, setSelectedCamera] = useState<string>('');
+	const [webcamActive, setWebcamActive] = useState(false);
+	const [isLiveCapturing, setIsLiveCapturing] = useState(false);
 
 	const { gridState, updateCell, clearGrid, userCount, setSocket, handleMessage } = useGridState();
 	const { socket, isConnected, subscribeToMessages } = usePartySocket(roomId);
@@ -34,7 +42,40 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 		setSocket(socket as unknown as WebSocket);
 	}, [socket, setSocket]);
 
+	// Check webcam support and load cameras on mount
+	useEffect(() => {
+		const supported = WebcamCapture.isSupported();
+		setWebcamSupported(supported);
+
+		if (supported) {
+			// Load available cameras
+			getAvailableCameras().then(cameras => {
+				setAvailableCameras(cameras);
+				if (cameras.length > 0) {
+					setSelectedCamera(cameras[0].deviceId);
+				}
+			}).catch(error => {
+				console.error('Failed to load cameras:', error);
+			});
+		}
+
+		return () => {
+			// Cleanup webcam resources when component unmounts
+			cleanupWebcam();
+		};
+	}, []);
+
+	// Sync live capture state periodically
+	useEffect(() => {
+		const interval = setInterval(() => {
+			setIsLiveCapturing(isLiveWebcamCapture());
+		}, 500);
+
+		return () => clearInterval(interval);
+	}, []);
+
 	const gridRef = useRef<HTMLDivElement>(null);
+	const webcamPreviewRef = useRef<HTMLDivElement>(null);
 
 	// Handle drawing with pointer events
 	const handleDrawEvent = useCallback((e: React.PointerEvent, forceDrawing = false) => {
@@ -93,7 +134,8 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 
 		const file = e.dataTransfer?.files[0];
 		if (file?.type.startsWith('image/') && socket) {
-			await drawImageToGrid(file, socket as any);
+			// Use batch drawing for much better performance
+			await drawImageToGridBatch(file, socket as any);
 		}
 	}, [socket]);
 
@@ -101,10 +143,88 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 	const handleTextSubmit = useCallback((e: React.FormEvent) => {
 		e.preventDefault();
 		if (textInput.trim() && socket) {
-			drawText(textInput.trim(), currentColor, socket as any);
+			// Use batch drawing for much better performance
+			drawTextBatch(textInput.trim(), currentColor, socket as any);
 			setTextInput('');
 		}
 	}, [textInput, currentColor, socket]);
+
+	// Start/stop webcam preview
+	const handleWebcamToggle = useCallback(async () => {
+		if (!webcamSupported) return;
+
+		if (webcamActive) {
+			cleanupWebcam();
+			setWebcamActive(false);
+		} else {
+			try {
+				setWebcamLoading(true);
+				await initializeWebcamPreview(selectedCamera, webcamPreviewRef.current || undefined);
+				setWebcamActive(true);
+			} catch (error) {
+				console.error('Failed to start webcam:', error);
+				alert(`Webcam failed to start: ${error}`);
+			} finally {
+				setWebcamLoading(false);
+			}
+		}
+	}, [webcamSupported, webcamActive, selectedCamera]);
+
+	// Handle camera selection change
+	const handleCameraChange = useCallback(async (e: React.ChangeEvent<HTMLSelectElement>) => {
+		const newDeviceId = e.target.value;
+		setSelectedCamera(newDeviceId);
+
+		// If webcam is active, restart it with the new camera
+		if (webcamActive) {
+			try {
+				setWebcamLoading(true);
+				await initializeWebcamPreview(newDeviceId, webcamPreviewRef.current || undefined);
+			} catch (error) {
+				console.error('Failed to switch camera:', error);
+				alert(`Failed to switch camera: ${error}`);
+			} finally {
+				setWebcamLoading(false);
+			}
+		}
+	}, [webcamActive]);
+
+	// Live capture toggle handler
+	const handleLiveCaptureToggle = useCallback(async () => {
+		if (!socket || !webcamSupported) return;
+
+		if (isLiveCapturing) {
+			stopLiveWebcamCapture();
+			setIsLiveCapturing(false);
+		} else {
+			setWebcamLoading(true);
+			try {
+				await startLiveWebcamCapture(socket as any, selectedCamera, webcamPreviewRef.current || undefined);
+				setIsLiveCapturing(true);
+				setWebcamActive(true); // Ensure webcam is shown as active
+			} catch (error) {
+				console.error('Failed to start live capture:', error);
+				alert(`Live capture failed to start: ${error}`);
+			} finally {
+				setWebcamLoading(false);
+			}
+		}
+	}, [socket, webcamSupported, selectedCamera, isLiveCapturing]);
+
+	// Single frame capture handler
+	const handleWebcamCapture = useCallback(async () => {
+		if (!socket || !webcamSupported) return;
+
+		setWebcamLoading(true);
+		try {
+			await captureWebcamToGrid(socket as any, selectedCamera, webcamPreviewRef.current || undefined);
+		} catch (error) {
+			console.error('Failed to capture webcam:', error);
+			alert(`Webcam capture failed: ${error}`);
+		} finally {
+			setWebcamLoading(false);
+		}
+	}, [socket, webcamSupported, selectedCamera]);
 
 	// Navigation function
 	const navigate = (window as any).navigate;
@@ -147,6 +267,76 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 						currentColor={currentColor}
 						onColorChange={setCurrentColor}
 					/>
+
+										{webcamSupported && (
+						<div className="webcam-controls">
+							<div className="webcam-actions">
+								<button
+									type="button"
+									onClick={handleWebcamToggle}
+									disabled={webcamLoading || isLiveCapturing}
+									title={webcamActive ? "Stop webcam preview" : "Start webcam preview"}
+									className="webcam-button"
+								>
+									{webcamLoading ? '📷...' : webcamActive ? '📷 Stop' : '📷 Start'}
+								</button>
+
+								{webcamActive && !isLiveCapturing && (
+									<button
+										type="button"
+										onClick={handleWebcamCapture}
+										disabled={webcamLoading}
+										title="Capture current frame to grid"
+										className="capture-button"
+									>
+										{webcamLoading ? '⏺️...' : '⏺️ Capture'}
+									</button>
+								)}
+
+								{webcamActive && (
+									<button
+										type="button"
+										onClick={handleLiveCaptureToggle}
+										disabled={webcamLoading}
+										title={isLiveCapturing ? "Stop live streaming to grid (1fps)" : "Start live streaming to grid (1fps)"}
+										className={isLiveCapturing ? "live-stop-button" : "live-start-button"}
+									>
+										{webcamLoading ? '🔴...' : isLiveCapturing ? '🔴 Stop Live' : '🔴 Live'}
+									</button>
+								)}
+							</div>
+
+							{isLiveCapturing && (
+								<div className="live-indicator">
+									🔴 LIVE - Streaming every second
+								</div>
+							)}
+
+							{availableCameras.length > 1 && (
+								<select
+									value={selectedCamera}
+									onChange={handleCameraChange}
+									disabled={webcamLoading}
+									className="camera-select"
+									title="Select camera"
+								>
+									{availableCameras.map(camera => (
+										<option key={camera.deviceId} value={camera.deviceId}>
+											{camera.label}
+										</option>
+									))}
+								</select>
+							)}
+
+							{webcamActive && (
+								<div
+									ref={webcamPreviewRef}
+									className="webcam-preview-container"
+									title="Live webcam preview"
+								></div>
+							)}
+						</div>
+					)}
 
 					<button
 						type="button"

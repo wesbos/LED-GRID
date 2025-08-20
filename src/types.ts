@@ -16,17 +16,34 @@ export interface DrawMessage {
   color: string;
 }
 
+export interface BatchDrawMessage {
+  type: 'batchDraw';
+  pixels: Array<{
+    x: number;
+    y: number;
+    color: string;
+  }>;
+}
+
 export interface ClearMessage {
   type: 'clear';
 }
 
-export type ClientMessage = DrawMessage | ClearMessage;
+
 
 // Server-to-client message types
 export interface GridUpdateMessage {
   type: 'gridUpdate';
   index: number;
   color: string;
+}
+
+export interface BatchUpdateMessage {
+  type: 'batchUpdate';
+  updates: Array<{
+    index: number;
+    color: string;
+  }>;
 }
 
 export interface FullStateMessage {
@@ -39,7 +56,7 @@ export interface UserCountMessage {
   count: number;
 }
 
-export type ServerMessage = GridUpdateMessage | FullStateMessage | UserCountMessage;
+export type ServerMessage = GridUpdateMessage | BatchUpdateMessage | FullStateMessage | UserCountMessage;
 
 // WLED-specific types
 export interface WledSegment {
@@ -101,4 +118,4 @@ export interface UtilityStopMessage {
 export type UtilityMessage = UtilityExecuteMessage | UtilityStopMessage;
 
 // Extend ClientMessage to include utility messages
-export type ClientMessage = DrawMessage | ClearMessage | UtilityMessage;
+export type ClientMessage = DrawMessage | BatchDrawMessage | ClearMessage | UtilityMessage;
