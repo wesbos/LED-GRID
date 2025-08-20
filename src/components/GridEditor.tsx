@@ -43,27 +43,27 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 	}, [socket, setSocket]);
 
 	// Check webcam support and load cameras on mount
-	useEffect(() => {
-		const supported = WebcamCapture.isSupported();
-		setWebcamSupported(supported);
+	// useEffect(() => {
+	// 	const supported = WebcamCapture.isSupported();
+	// 	setWebcamSupported(supported);
 
-		if (supported) {
-			// Load available cameras
-			getAvailableCameras().then(cameras => {
-				setAvailableCameras(cameras);
-				if (cameras.length > 0) {
-					setSelectedCamera(cameras[0].deviceId);
-				}
-			}).catch(error => {
-				console.error('Failed to load cameras:', error);
-			});
-		}
+	// 	if (supported) {
+	// 		// Load available cameras
+	// 		getAvailableCameras().then(cameras => {
+	// 			setAvailableCameras(cameras);
+	// 			if (cameras.length > 0) {
+	// 				setSelectedCamera(cameras[0].deviceId);
+	// 			}
+	// 		}).catch(error => {
+	// 			console.error('Failed to load cameras:', error);
+	// 		});
+	// 	}
 
-		return () => {
-			// Cleanup webcam resources when component unmounts
-			cleanupWebcam();
-		};
-	}, []);
+	// 	return () => {
+	// 		// Cleanup webcam resources when component unmounts
+	// 		cleanupWebcam();
+	// 	};
+	// }, []);
 
 	// Sync live capture state periodically
 	useEffect(() => {
@@ -338,13 +338,13 @@ export function GridEditor({ roomId = 'default', showRoomInfo = false }: GridEdi
 						</div>
 					)}
 
-					<button
+					{/* <button
 						type="button"
 						onClick={clearGrid}
 						title="Clear all"
 					>
 						Clear
-					</button>
+					</button> */}
 				</div>
 
 				<Grid

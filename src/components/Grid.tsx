@@ -20,7 +20,7 @@ export const Grid = forwardRef<HTMLDivElement, GridProps>(({ gridState, onPointe
 	React.useEffect(() => {
 		const coloredCount = gridState.filter(cell => cell.color).length;
 		if (coloredCount > 0) {
-			console.log(`[Grid] ${coloredCount}/${gridState.length} cells colored`);
+			// console.log(`[Grid] ${coloredCount}/${gridState.length} cells colored`);
 		}
 	}, [gridState]);
 
@@ -53,7 +53,7 @@ export const Grid = forwardRef<HTMLDivElement, GridProps>(({ gridState, onPointe
 			onDragEnter={wrap('dragenter', onDragEnter)}
 			onDragLeave={wrap('dragleave', onDragLeave)}
 			onDragOver={wrap('dragover', onDragOver)}
-			onDrop={wrap('drop', onDrop)}
+			// onDrop={wrap('drop', onDrop)}
 		>
 			{Array.from({ length: TOTAL_CELLS }, (_, i) => {
 				const cellColor = gridState[i]?.color;
